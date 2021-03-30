@@ -11,7 +11,7 @@ use curve25519_dalek::scalar::Scalar;
 /// secret variables.  This means there is no space savings for a
 /// `CompactProof` over a `BatchableProof` when there is only one
 /// statement.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CompactProof {
     /// The Fiat-Shamir challenge.
     pub challenge: Scalar,
@@ -23,7 +23,7 @@ pub struct CompactProof {
 ///
 /// This proof has `m+n` 32-byte elements, where `m` is the number of
 /// secret variables and `n` is the number of statements.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct BatchableProof {
     /// Commitments to the prover's blinding factors.
     pub commitments: Vec<CompressedRistretto>,

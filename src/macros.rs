@@ -15,7 +15,7 @@ macro_rules! __compute_formula_constraint {
     // Unbracket a statement
     (($public_vars:ident, $secret_vars:ident) ($($x:tt)*)) => {
         // Add a trailing +
-        __compute_formula_constraint!(($public_vars,$secret_vars) $($x)* +)
+        zkp::__compute_formula_constraint!(($public_vars,$secret_vars) $($x)* +)
     };
     // Inner part of the formula: give a list of &Scalars
     // Since there's a trailing +, we can just generate the list as normal...
@@ -138,13 +138,13 @@ macro_rules! define_proof {
                 };
 
                 /// A container type that simulates named parameters for [`proof_statement`].
-                #[derive(Copy, Clone)]
+                #[derive(Copy, Clone, Debug)]
                 pub struct SecretVars<CS: SchnorrCS> {
                     $( pub $secret_var: CS::ScalarVar, )+
                 }
 
                 /// A container type that simulates named parameters for [`proof_statement`].
-                #[derive(Copy, Clone)]
+                #[derive(Copy, Clone, Debug)]
                 pub struct PublicVars<CS: SchnorrCS> {
                     $( pub $instance_var: CS::PointVar, )+
                     $( pub $common_var: CS::PointVar, )+
@@ -164,14 +164,14 @@ macro_rules! define_proof {
                     $(
                         cs.constrain(
                             publics.$lhs,
-                            __compute_formula_constraint!( (publics, secrets) $statement ),
+                            zkp::__compute_formula_constraint!( (publics, secrets) $statement ),
                         );
                     )+
                 }
             }
 
             /// Named parameters for [`prove_compact`] and [`prove_batchable`].
-            #[derive(Copy, Clone)]
+            #[derive(Copy, Clone, Debug)]
             pub struct ProveAssignments<'a> {
                 $(pub $secret_var: &'a Scalar,)+
                 $(pub $instance_var: &'a RistrettoPoint,)+
@@ -179,7 +179,7 @@ macro_rules! define_proof {
             }
 
             /// Named parameters for [`verify_compact`] and [`verify_batchable`].
-            #[derive(Copy, Clone)]
+            #[derive(Copy, Clone, Debug)]
             pub struct VerifyAssignments<'a> {
                 $(pub $instance_var: &'a CompressedRistretto,)+
                 $(pub $common_var: &'a CompressedRistretto,)+
@@ -190,7 +190,7 @@ macro_rules! define_proof {
             /// This is used to allow a prover to avoid having to
             /// re-compress points used in the proof that may be
             /// necessary to supply to the verifier.
-            #[derive(Copy, Clone)]
+            #[derive(Copy, Clone, Debug)]
             pub struct CompressedPoints {
                 $(pub $instance_var: CompressedRistretto,)+
                 $(pub $common_var: CompressedRistretto,)+
