@@ -1,8 +1,9 @@
 use rand::thread_rng;
 
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
+// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use bls12_381::{Scalar, G1Affine};
 use curve25519_dalek::traits::MultiscalarMul;
+use ff::Field;
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
 use crate::{BatchableProof, CompactProof, Transcript};
@@ -23,7 +24,7 @@ use crate::{BatchableProof, CompactProof, Transcript};
 pub struct Prover<'a> {
     transcript: &'a mut Transcript,
     scalars: Vec<Scalar>,
-    points: Vec<RistrettoPoint>,
+    points: Vec<G1Affine>,
     point_labels: Vec<&'static [u8]>,
     constraints: Vec<(PointVar, Vec<(ScalarVar, PointVar)>)>,
 }
@@ -64,20 +65,20 @@ impl<'a> Prover<'a> {
     pub fn allocate_point(
         &mut self,
         label: &'static [u8],
-        assignment: RistrettoPoint,
-    ) -> (PointVar, CompressedRistretto) {
+        assignment: G1Affine,
+    ) -> (PointVar, G1Affine) {
         let compressed = self.transcript.append_point_var(label, &assignment);
         self.points.push(assignment);
         self.point_labels.push(label);
-        (PointVar(self.points.len() - 1), compressed)
+        (PointVar(self.points.len() - 1), assignment)
     }
 
     /// The compact and batchable proofs differ only by which data they store.
-    fn prove_impl(self) -> (Scalar, Vec<Scalar>, Vec<CompressedRistretto>) {
+    fn prove_impl(self) -> (Scalar, Vec<Scalar>, Vec<G1Affine>) {
         // Construct a TranscriptRng
         let mut rng_builder = self.transcript.build_rng();
         for scalar in &self.scalars {
-            rng_builder = rng_builder.rekey_with_witness_bytes(b"", scalar.as_bytes());
+            rng_builder = rng_builder.rekey_with_witness_bytes(b"", &scalar.to_bytes());
         }
         let mut transcript_rng = rng_builder.finalize(&mut thread_rng());
 

@@ -41,9 +41,8 @@ pub mod prover;
 /// Implements proof verification of compact and batchable proofs.
 pub mod verifier;
 
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::IsIdentity;
+// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use bls12_381::{Scalar, G1Affine};
 
 use crate::{ProofError, Transcript};
 
@@ -117,8 +116,8 @@ pub trait TranscriptProtocol {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto;
+        point: &G1Affine,
+    );
 
     /// Check that point variable is not the identity and
     /// append it to the transcript, for use by a verifier.
@@ -130,7 +129,7 @@ pub trait TranscriptProtocol {
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError>;
 
     /// Append a blinding factor commitment to the transcript, for use by
@@ -142,8 +141,8 @@ pub trait TranscriptProtocol {
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto;
+        point: &G1Affine,
+    );
 
     /// Check that a blinding factor commitment is not the identity and
     /// commit it to the transcript, for use by a verifier.
@@ -155,7 +154,7 @@ pub trait TranscriptProtocol {
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError>;
 
     /// Get a scalar challenge from the transcript.
@@ -164,7 +163,7 @@ pub trait TranscriptProtocol {
 
 impl TranscriptProtocol for Transcript {
     fn domain_sep(&mut self, label: &'static [u8]) {
-        self.append_message(b"dom-sep", b"schnorrzkp/1.0/ristretto255");
+        self.append_message(b"dom-sep", b"schnorrzkp/1.0/bls12_381");
         self.append_message(b"dom-sep", label);
     }
 
@@ -175,54 +174,54 @@ impl TranscriptProtocol for Transcript {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto {
-        let encoding = point.compress();
+        point: &G1Affine,
+    ) {
+        let encoding = point.to_compressed();
         self.append_message(b"ptvar", label);
-        self.append_message(b"val", encoding.as_bytes());
-        encoding
+        self.append_message(b"val", &encoding);
+        // encoding
     }
 
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError> {
-        if point.is_identity() {
+        if bool::from(point.is_identity()) {
             return Err(ProofError::VerificationFailure);
         }
         self.append_message(b"ptvar", label);
-        self.append_message(b"val", point.as_bytes());
+        self.append_message(b"val", &point.to_compressed());
         Ok(())
     }
 
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto {
-        let encoding = point.compress();
+        point: &G1Affine,
+    ) {
+        let encoding = point.to_compressed();
         self.append_message(b"blindcom", label);
-        self.append_message(b"val", encoding.as_bytes());
-        encoding
+        self.append_message(b"val", &encoding);
+        // point.clone()
     }
 
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError> {
-        if point.is_identity() {
+        if bool::from(point.is_identity()) {
             return Err(ProofError::VerificationFailure);
         }
         self.append_message(b"blindcom", label);
-        self.append_message(b"val", point.as_bytes());
+        self.append_message(b"val", &point.to_compressed());
         Ok(())
     }
 
     fn get_challenge(&mut self, label: &'static [u8]) -> Scalar {
         let mut bytes = [0; 64];
         self.challenge_bytes(label, &mut bytes);
-        Scalar::from_bytes_mod_order_wide(&bytes)
+        Scalar::from_bytes_wide(&bytes)
     }
 }

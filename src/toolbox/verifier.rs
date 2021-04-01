@@ -1,8 +1,8 @@
 use rand::{thread_rng, Rng};
 use std::iter;
 
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
+// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use bls12_381::{Scalar, G1Affine};
 use curve25519_dalek::traits::{IsIdentity, VartimeMultiscalarMul};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
@@ -26,7 +26,7 @@ use crate::{BatchableProof, CompactProof, ProofError, Transcript};
 pub struct Verifier<'a> {
     transcript: &'a mut Transcript,
     num_scalars: usize,
-    points: Vec<CompressedRistretto>,
+    points: Vec<G1Affine>,
     point_labels: Vec<&'static [u8]>,
     constraints: Vec<(PointVar, Vec<(ScalarVar, PointVar)>)>,
 }
@@ -67,7 +67,7 @@ impl<'a> Verifier<'a> {
     pub fn allocate_point(
         &mut self,
         label: &'static [u8],
-        assignment: CompressedRistretto,
+        assignment: G1Affine,
     ) -> Result<PointVar, ProofError> {
         self.transcript
             .validate_and_append_point_var(label, &assignment)?;
@@ -88,7 +88,7 @@ impl<'a> Verifier<'a> {
             .points
             .iter()
             .map(|pt| pt.decompress())
-            .collect::<Option<Vec<RistrettoPoint>>>()
+            .collect::<Option<Vec<G1Affine>>>()
             .ok_or(ProofError::VerificationFailure)?;
 
         // Recompute the prover's commitments based on their claimed challenge value:

@@ -1,5 +1,5 @@
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
+// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use bls12_381::{Scalar, G1Affine};
 use curve25519_dalek::traits::IsIdentity;
 
 use merlin::Transcript;
@@ -35,8 +35,8 @@ pub trait TranscriptProtocol {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto;
+        point: &G1Affine,
+    );
 
     /// Check that point variable is not the identity and
     /// append it to the transcript, for use by a verifier.
@@ -48,7 +48,7 @@ pub trait TranscriptProtocol {
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError>;
 
     /// Append a blinding factor commitment to the transcript, for use by
@@ -60,8 +60,8 @@ pub trait TranscriptProtocol {
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto;
+        point: &G1Affine,
+    );
 
     /// Check that a blinding factor commitment is not the identity and
     /// commit it to the transcript, for use by a verifier.
@@ -73,7 +73,7 @@ pub trait TranscriptProtocol {
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError>;
 
     /// Get a scalar challenge from the transcript.
@@ -82,7 +82,7 @@ pub trait TranscriptProtocol {
 
 impl TranscriptProtocol for Transcript {
     fn domain_sep(&mut self, label: &'static [u8]) {
-        self.commit_bytes(b"dom-sep", b"schnorrzkp/1.0/ristretto255");
+        self.commit_bytes(b"dom-sep", b"schnorrzkp/1.0/bls12_381");
         self.commit_bytes(b"dom-sep", label);
     }
 
@@ -93,18 +93,17 @@ impl TranscriptProtocol for Transcript {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto {
+        point: &G1Affine,
+    ) {
         let encoding = point.compress();
         self.commit_bytes(b"ptvar", label);
         self.commit_bytes(b"val", encoding.as_bytes());
-        encoding
     }
 
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError> {
         if point.is_identity() {
             return Err(ProofError::VerificationFailure);
@@ -117,18 +116,17 @@ impl TranscriptProtocol for Transcript {
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &RistrettoPoint,
-    ) -> CompressedRistretto {
+        point: &G1Affine,
+    ) {
         let encoding = point.compress();
         self.commit_bytes(b"blindcom", label);
         self.commit_bytes(b"val", encoding.as_bytes());
-        encoding
     }
 
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError> {
         if point.is_identity() {
             return Err(ProofError::VerificationFailure);

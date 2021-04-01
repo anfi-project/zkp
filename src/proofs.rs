@@ -1,5 +1,4 @@
-use curve25519_dalek::ristretto::CompressedRistretto;
-use curve25519_dalek::scalar::Scalar;
+use bls12_381::{Scalar, G1Affine};
 
 /// A Schnorr proof in compact format.
 ///
@@ -26,7 +25,7 @@ pub struct CompactProof {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct BatchableProof {
     /// Commitments to the prover's blinding factors.
-    pub commitments: Vec<CompressedRistretto>,
+    pub commitments: Vec<G1Affine>,
     /// The prover's responses, one per secret variable.
     pub responses: Vec<Scalar>,
 }
