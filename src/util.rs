@@ -1,5 +1,8 @@
 use std::ops::{Index, IndexMut};
 
+use bls12_381::Scalar;
+use rand::RngCore;
+
 pub struct Matrix<T> {
     _rows: usize,
     cols: usize,
@@ -35,4 +38,10 @@ impl<T> Matrix<T> {
     pub fn row_major_entries(&self) -> impl Iterator<Item = &T> {
         self.entries.iter()
     }
+}
+
+pub(crate) fn rand_scalar(mut rng: impl RngCore) -> Scalar {
+    let mut buf = [0; 64];
+    rng.fill_bytes(&mut buf);
+    Scalar::from_bytes_wide(&buf)
 }

@@ -24,7 +24,7 @@ serde = "1"
 serde_derive = "1"
 thiserror = "1"
 # Disable default features to deselect a backend, then select one below
-curve25519-dalek = { version = "3", default-features = false, features = ["serde", "std"] }
+# curve25519-dalek = { version = "3", default-features = false, features = ["serde", "std"] }
 bls12_381 = { path = "../bls12_381" } # "0.4.0"
 ff = "0.9.0"
 
@@ -33,10 +33,10 @@ bincode = "1"
 sha2 = "0.9"
 
 [features]
-nightly = ["curve25519-dalek/nightly"]
+nightly = []
 debug-transcript = ["merlin/debug-transcript"]
 bench = []
-default = ["u64_backend"]
-u32_backend = ["curve25519-dalek/u32_backend"]
-u64_backend = ["curve25519-dalek/u64_backend"]
-simd_backend = ["curve25519-dalek/simd_backend"]
+default = []
+#u32_backend = ["curve25519-dalek/u32_backend"]
+#u64_backend = ["curve25519-dalek/u64_backend"]
+#simd_backend = ["curve25519-dalek/simd_backend"]

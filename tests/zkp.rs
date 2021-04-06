@@ -11,7 +11,7 @@
 #![allow(non_snake_case)]
 
 extern crate bincode;
-extern crate curve25519_dalek;
+extern crate bls12_381;
 extern crate serde;
 extern crate sha2;
 #[macro_use]
@@ -19,9 +19,8 @@ extern crate zkp;
 
 use self::sha2::Sha512;
 
-use curve25519_dalek::constants as dalek_constants;
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
+// use curve25519_dalek::constants as dalek_constants;
+use bls12_381::{Scalar, G1Affine};
 
 use zkp::Transcript;
 
@@ -32,9 +31,9 @@ fn create_and_verify_compact() {
     // Prover's scope
     let (proof, points) = {
         let H = RistrettoPoint::hash_from_bytes::<Sha512>(b"A VRF input, for instance");
-        let x = Scalar::from(89327492234u64).invert();
-        let A = &x * &dalek_constants::RISTRETTO_BASEPOINT_TABLE;
-        let B = &x * &H;
+        let x = Scalar::from(89327492234u64).invert().unwrap();
+        let A = G1Affine::generator() * x;
+        let B = H * x;
 
         let mut transcript = Transcript::new(b"DLEQTest");
         dleq::prove_compact(
@@ -43,7 +42,7 @@ fn create_and_verify_compact() {
                 x: &x,
                 A: &A,
                 B: &B,
-                G: &dalek_constants::RISTRETTO_BASEPOINT_POINT,
+                G: G1Affine::generator(),
                 H: &H,
             },
         )
@@ -61,7 +60,7 @@ fn create_and_verify_compact() {
         dleq::VerifyAssignments {
             A: &points.A,
             B: &points.B,
-            G: &dalek_constants::RISTRETTO_BASEPOINT_COMPRESSED,
+            G: G1Affine::generator(),
             H: &RistrettoPoint::hash_from_bytes::<Sha512>(b"A VRF input, for instance").compress(),
         },
     )

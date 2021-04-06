@@ -1,8 +1,6 @@
 use rand::{thread_rng, Rng};
 
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::{IsIdentity, VartimeMultiscalarMul};
+use bls12_381::{Scalar, G1Affine, G1Projective};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
 use crate::util::Matrix;
@@ -33,10 +31,10 @@ pub struct BatchVerifier<'a> {
 
     num_scalars: usize,
 
-    static_points: Vec<CompressedRistretto>,
+    static_points: Vec<G1Affine>,
     static_point_labels: Vec<&'static [u8]>,
 
-    instance_points: Vec<Vec<CompressedRistretto>>,
+    instance_points: Vec<Vec<G1Affine>>,
     instance_point_labels: Vec<&'static [u8]>,
 
     constraints: Vec<(PointVar, Vec<(ScalarVar, PointVar)>)>,
@@ -100,7 +98,7 @@ impl<'a> BatchVerifier<'a> {
     pub fn allocate_static_point(
         &mut self,
         label: &'static [u8],
-        assignment: CompressedRistretto,
+        assignment: G1Affine,
     ) -> Result<PointVar, ProofError> {
         for transcript in self.transcripts.iter_mut() {
             transcript.validate_and_append_point_var(label, &assignment)?;
@@ -115,7 +113,7 @@ impl<'a> BatchVerifier<'a> {
     pub fn allocate_instance_point(
         &mut self,
         label: &'static [u8],
-        assignments: Vec<CompressedRistretto>,
+        assignments: Vec<G1Affine>,
     ) -> Result<PointVar, ProofError> {
         if assignments.len() != self.batch_size {
             return Err(ProofError::BatchSizeMismatch);
@@ -176,7 +174,7 @@ impl<'a> BatchVerifier<'a> {
         for i in 0..num_c {
             let (ref lhs_var, ref rhs_lc) = self.constraints[i];
             for j in 0..self.batch_size {
-                let random_factor = Scalar::from(thread_rng().gen::<u128>());
+                let random_factor = crate::util::rand_scalar(&mut thread_rng()); // Scalar::from(thread_rng().gen::<u128>());
 
                 // rand*( sum(P_i, resp_i) - c * Q - Q_com) == 0
 
@@ -214,20 +212,30 @@ impl<'a> BatchVerifier<'a> {
         let flat_instance_points = instance_points
             .iter()
             .flat_map(|inner| inner.iter().cloned())
-            .collect::<Vec<CompressedRistretto>>();
+            .collect::<Vec<G1Affine>>();
 
-        let check = RistrettoPoint::optional_multiscalar_mul(
-            static_coeffs
-                .iter()
-                .chain(instance_coeffs.row_major_entries()),
-            self.static_points
-                .iter()
-                .chain(flat_instance_points.iter())
-                .map(|pt| pt.decompress()),
-        )
-        .ok_or(ProofError::VerificationFailure)?;
+        let mut check: G1Projective = self.static_points[0] * static_coeffs[0];
+        for i in 1..static_coeffs.len() {
+            check += self.static_points[i] * static_coeffs[i];
+        }
+        let rme: Vec<&Scalar> = instance_coeffs.row_major_entries().collect();
+        for i in 0..rme.len() {
+            check += flat_instance_points[i] * rme[i];
+        }
+        // check -= G1Projective::identity();
 
-        if check.is_identity() {
+        // let check = RistrettoPoint::optional_multiscalar_mul(
+        //     static_coeffs
+        //         .iter()
+        //         .chain(instance_coeffs.row_major_entries()),
+        //     self.static_points
+        //         .iter()
+        //         .chain(flat_instance_points.iter())
+        //         .map(|pt| pt.decompress()),
+        // )
+        // .ok_or(ProofError::VerificationFailure)?;
+
+        if bool::from(check.is_identity()) {
             Ok(())
         } else {
             Err(ProofError::VerificationFailure)

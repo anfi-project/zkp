@@ -1,9 +1,7 @@
 use rand::{thread_rng, Rng};
 use std::iter;
 
-// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use bls12_381::{Scalar, G1Affine};
-use curve25519_dalek::traits::{IsIdentity, VartimeMultiscalarMul};
+use bls12_381::{Scalar, G1Affine, G1Projective};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
 use crate::{BatchableProof, CompactProof, ProofError, Transcript};
@@ -83,30 +81,38 @@ impl<'a> Verifier<'a> {
             return Err(ProofError::VerificationFailure);
         }
 
+        // WSK: I don't think we need to worry about this, because we're not using compressed points
+        // there's also no Option<> to worry about
+
         // Decompress all parameters or fail verification.
-        let points = self
-            .points
-            .iter()
-            .map(|pt| pt.decompress())
-            .collect::<Option<Vec<G1Affine>>>()
-            .ok_or(ProofError::VerificationFailure)?;
+        // let points = self
+        //     .points
+        //     .iter()
+        //     // .map(|pt| pt.decompress())
+        //     .collect::<Option<Vec<G1Affine>>>()
+        //     .ok_or(ProofError::VerificationFailure)?;
 
         // Recompute the prover's commitments based on their claimed challenge value:
         let minus_c = -proof.challenge;
         for (lhs_var, rhs_lc) in &self.constraints {
-            let commitment = RistrettoPoint::vartime_multiscalar_mul(
-                rhs_lc
-                    .iter()
-                    .map(|(sc_var, _pt_var)| proof.responses[sc_var.0])
-                    .chain(iter::once(minus_c)),
-                rhs_lc
-                    .iter()
-                    .map(|(_sc_var, pt_var)| points[pt_var.0])
-                    .chain(iter::once(points[lhs_var.0])),
-            );
+
+            let mut commitment: G1Projective = self.points[lhs_var.0] * minus_c;
+            for (sc_var, pt_var) in rhs_lc.iter() {
+                commitment += self.points[pt_var.0] * proof.responses[sc_var.0];
+            }
+            // let commitment = RistrettoPoint::vartime_multiscalar_mul(
+            //     rhs_lc
+            //         .iter()
+            //         .map(|(sc_var, _pt_var)| proof.responses[sc_var.0])
+            //         .chain(iter::once(minus_c)),
+            //     rhs_lc
+            //         .iter()
+            //         .map(|(_sc_var, pt_var)| points[pt_var.0])
+            //         .chain(iter::once(points[lhs_var.0])),
+            // );
 
             self.transcript
-                .append_blinding_commitment(self.point_labels[lhs_var.0], &commitment);
+                .append_blinding_commitment(self.point_labels[lhs_var.0], &G1Affine::from(commitment));
         }
 
         // Recompute the challenge and check if it's the claimed one
@@ -142,7 +148,7 @@ impl<'a> Verifier<'a> {
         let minus_c = -self.transcript.get_challenge(b"chal");
 
         let commitments_offset = self.points.len();
-        let combined_points = self.points.iter().chain(proof.commitments.iter());
+        let combined_points: Vec<&G1Affine> = self.points.iter().chain(proof.commitments.iter()).collect();
 
         let mut coeffs = vec![Scalar::zero(); self.points.len() + proof.commitments.len()];
         // For each constraint of the form Q = sum(P_i, x_i),
@@ -150,7 +156,7 @@ impl<'a> Verifier<'a> {
         // so add the check rand*( sum(P_i, resp_i) - c * Q - Q_com ) == 0
         for i in 0..self.constraints.len() {
             let (ref lhs_var, ref rhs_lc) = self.constraints[i];
-            let random_factor = Scalar::from(thread_rng().gen::<u128>());
+            let random_factor = crate::util::rand_scalar(&mut thread_rng()); //  Scalar::from(thread_rng().gen::<u128>());
 
             coeffs[commitments_offset + i] += -random_factor;
             coeffs[lhs_var.0] += random_factor * minus_c;
@@ -159,13 +165,18 @@ impl<'a> Verifier<'a> {
             }
         }
 
-        let check = RistrettoPoint::optional_multiscalar_mul(
-            &coeffs,
-            combined_points.map(|pt| pt.decompress()),
-        )
-        .ok_or(ProofError::VerificationFailure)?;
+        let mut check: G1Projective = combined_points[0] * coeffs[0];
+        for i in 1..coeffs.len() {
+            check += combined_points[i] * coeffs[i];
+        }
 
-        if check.is_identity() {
+        // let check = RistrettoPoint::optional_multiscalar_mul(
+        //     &coeffs,
+        //     combined_points.map(|pt| pt.decompress()),
+        // )
+        // .ok_or(ProofError::VerificationFailure)?;
+
+        if bool::from(check.is_identity()) {
             Ok(())
         } else {
             Err(ProofError::VerificationFailure)

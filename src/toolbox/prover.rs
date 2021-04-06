@@ -1,9 +1,7 @@
 use rand::thread_rng;
 
 // use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use bls12_381::{Scalar, G1Affine};
-use curve25519_dalek::traits::MultiscalarMul;
-use ff::Field;
+use bls12_381::{Scalar, G1Affine, G1Projective};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
 use crate::{BatchableProof, CompactProof, Transcript};
@@ -86,21 +84,28 @@ impl<'a> Prover<'a> {
         let blindings = self
             .scalars
             .iter()
-            .map(|_| Scalar::random(&mut transcript_rng))
+            .map(|_| crate::util::rand_scalar(&mut transcript_rng))
             .collect::<Vec<Scalar>>();
 
         // Commit to each blinded LHS
         let mut commitments = Vec::with_capacity(self.constraints.len());
         for (lhs_var, rhs_lc) in &self.constraints {
-            let commitment = RistrettoPoint::multiscalar_mul(
-                rhs_lc.iter().map(|(sc_var, _pt_var)| blindings[sc_var.0]),
-                rhs_lc.iter().map(|(_sc_var, pt_var)| self.points[pt_var.0]),
-            );
-            let encoding = self
+            let mut commitment: G1Projective = G1Projective::identity();
+            for (sc_var, pt_var) in rhs_lc.iter() {
+                commitment += self.points[pt_var.0] * blindings[sc_var.0];
+            }
+            commitment -= G1Projective::identity();
+            
+            // RistrettoPoint::multiscalar_mul(
+            //     rhs_lc.iter().map(|(sc_var, _pt_var)| blindings[sc_var.0]),
+            //     rhs_lc.iter().map(|(_sc_var, pt_var)| self.points[pt_var.0]),
+            // );
+            let _encoding = self
                 .transcript
-                .append_blinding_commitment(self.point_labels[lhs_var.0], &commitment);
+                .append_blinding_commitment(self.point_labels[lhs_var.0], &G1Affine::from(commitment));
 
-            commitments.push(encoding);
+            // commitments.push(encoding);
+            commitments.push(G1Affine::from(commitment));
         }
 
         // Obtain a scalar challenge and compute responses

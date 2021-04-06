@@ -42,7 +42,7 @@ pub mod prover;
 pub mod verifier;
 
 // use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use bls12_381::{Scalar, G1Affine};
+use bls12_381::{Scalar, G1Affine, G1Projective};
 
 use crate::{ProofError, Transcript};
 

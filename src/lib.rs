@@ -26,7 +26,7 @@ extern crate serde;
 #[macro_use]
 pub extern crate serde_derive;
 #[doc(hidden)]
-pub extern crate curve25519_dalek;
+pub extern crate bls12_381;
 #[doc(hidden)]
 pub extern crate merlin;
 #[doc(hidden)]
