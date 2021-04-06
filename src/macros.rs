@@ -174,15 +174,15 @@ macro_rules! define_proof {
             #[derive(Copy, Clone, Debug)]
             pub struct ProveAssignments<'a> {
                 $(pub $secret_var: &'a Scalar,)+
-                $(pub $instance_var: &'a RistrettoPoint,)+
-                $(pub $common_var: &'a RistrettoPoint,)+
+                $(pub $instance_var: &'a G1Affine,)+
+                $(pub $common_var: &'a G1Affine,)+
             }
 
             /// Named parameters for [`verify_compact`] and [`verify_batchable`].
             #[derive(Copy, Clone, Debug)]
             pub struct VerifyAssignments<'a> {
-                $(pub $instance_var: &'a CompressedRistretto,)+
-                $(pub $common_var: &'a CompressedRistretto,)+
+                $(pub $instance_var: &'a G1Affine,)+
+                $(pub $common_var: &'a G1Affine,)+
             }
 
             /// Point encodings computed during proving and returned to allow reuse.
@@ -192,15 +192,15 @@ macro_rules! define_proof {
             /// necessary to supply to the verifier.
             #[derive(Copy, Clone, Debug)]
             pub struct CompressedPoints {
-                $(pub $instance_var: CompressedRistretto,)+
-                $(pub $common_var: CompressedRistretto,)+
+                $(pub $instance_var: G1Affine,)+
+                $(pub $common_var: G1Affine,)+
             }
 
             /// Named parameters for [`batch_verify`].
             #[derive(Clone)]
             pub struct BatchVerifyAssignments {
-                $(pub $instance_var: Vec<CompressedRistretto>,)+
-                $(pub $common_var: CompressedRistretto,)+
+                $(pub $instance_var: Vec<G1Affine>,)+
+                $(pub $common_var: G1Affine,)+
             }
 
             fn build_prover<'a>(
@@ -222,8 +222,8 @@ macro_rules! define_proof {
                 };
 
                 struct VarPointPairs {
-                    $( pub $instance_var: (PointVar, CompressedRistretto), )+
-                    $( pub $common_var: (PointVar, CompressedRistretto), )+
+                    $( pub $instance_var: (PointVar, G1Affine), )+
+                    $( pub $common_var: (PointVar, G1Affine), )+
                 }
 
                 let pairs = VarPointPairs {

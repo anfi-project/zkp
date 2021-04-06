@@ -19,21 +19,28 @@ extern crate zkp;
 
 use self::sha2::Sha512;
 
-// use curve25519_dalek::constants as dalek_constants;
-use bls12_381::{Scalar, G1Affine};
+use bls12_381::{Scalar, G1Affine, G1Projective};
+use bls12_381::hash_to_curve::{HashToCurve, ExpandMsgXmd};
 
 use zkp::Transcript;
+
+const DOMAIN: &[u8] = b"DALEK-ZKP-V01-CS02-with-BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
 define_proof! {dleq, "DLEQ Example Proof", (x), (A, B, H), (G) : A = (x * G), B = (x * H) }
 
 #[test]
 fn create_and_verify_compact() {
+    let G = G1Affine::generator();
+
     // Prover's scope
     let (proof, points) = {
-        let H = RistrettoPoint::hash_from_bytes::<Sha512>(b"A VRF input, for instance");
+        let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+            b"A VRF input, for instance", DOMAIN,
+        );
+        let H_aff = G1Affine::from(H);
         let x = Scalar::from(89327492234u64).invert().unwrap();
-        let A = G1Affine::generator() * x;
-        let B = H * x;
+        let A = G1Affine::from(G1Affine::generator() * x);
+        let B = G1Affine::from(H * x);
 
         let mut transcript = Transcript::new(b"DLEQTest");
         dleq::prove_compact(
@@ -42,8 +49,8 @@ fn create_and_verify_compact() {
                 x: &x,
                 A: &A,
                 B: &B,
-                G: G1Affine::generator(),
-                H: &H,
+                G: &G,
+                H: &H_aff,
             },
         )
     };
@@ -60,8 +67,10 @@ fn create_and_verify_compact() {
         dleq::VerifyAssignments {
             A: &points.A,
             B: &points.B,
-            G: G1Affine::generator(),
-            H: &RistrettoPoint::hash_from_bytes::<Sha512>(b"A VRF input, for instance").compress(),
+            G: &G,
+            H: &G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+                b"A VRF input, for instance", DOMAIN,
+            )),
         },
     )
     .is_ok());
@@ -70,13 +79,17 @@ fn create_and_verify_compact() {
 #[test]
 fn create_and_verify_batchable() {
     // identical to above but with batchable proofs
+    let G = G1Affine::generator();
 
     // Prover's scope
     let (proof, points) = {
-        let H = RistrettoPoint::hash_from_bytes::<Sha512>(b"A VRF input, for instance");
-        let x = Scalar::from(89327492234u64).invert();
-        let A = &x * &dalek_constants::RISTRETTO_BASEPOINT_TABLE;
-        let B = &x * &H;
+        let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+            b"A VRF input, for instance", DOMAIN,
+        );
+        let H_aff = G1Affine::from(H);
+        let x = Scalar::from(89327492234u64).invert().unwrap();
+        let A = G1Affine::from(&G * &x);
+        let B = G1Affine::from(&H * &x);
 
         let mut transcript = Transcript::new(b"DLEQTest");
         dleq::prove_batchable(
@@ -85,8 +98,8 @@ fn create_and_verify_batchable() {
                 x: &x,
                 A: &A,
                 B: &B,
-                G: &dalek_constants::RISTRETTO_BASEPOINT_POINT,
-                H: &H,
+                G: &G,
+                H: &H_aff,
             },
         )
     };
@@ -103,8 +116,10 @@ fn create_and_verify_batchable() {
         dleq::VerifyAssignments {
             A: &points.A,
             B: &points.B,
-            G: &dalek_constants::RISTRETTO_BASEPOINT_COMPRESSED,
-            H: &RistrettoPoint::hash_from_bytes::<Sha512>(b"A VRF input, for instance").compress(),
+            G: &G,
+            H: &G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+                b"A VRF input, for instance", DOMAIN,
+            )),
         },
     )
     .is_ok());
@@ -119,6 +134,8 @@ fn create_batch_and_batch_verify() {
         "A fourth message",
     ];
 
+    let G = G1Affine::generator();
+
     // Prover's scope
     let (proofs, pubkeys, vrf_outputs) = {
         let mut proofs = vec![];
@@ -126,10 +143,13 @@ fn create_batch_and_batch_verify() {
         let mut vrf_outputs = vec![];
 
         for (i, message) in messages.iter().enumerate() {
-            let H = RistrettoPoint::hash_from_bytes::<Sha512>(message.as_bytes());
+            let H = G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+                message.as_bytes(), DOMAIN,
+            ));
+            let H_aff = G1Affine::from(H);
             let x = Scalar::from(89327492234u64) * Scalar::from((i + 1) as u64);
-            let A = &x * &dalek_constants::RISTRETTO_BASEPOINT_TABLE;
-            let B = &x * &H;
+            let A = G1Affine::from(&G * &x);
+            let B = G1Affine::from(&H * &x);
 
             let mut transcript = Transcript::new(b"DLEQTest");
             let (proof, points) = dleq::prove_batchable(
@@ -138,8 +158,8 @@ fn create_batch_and_batch_verify() {
                     x: &x,
                     A: &A,
                     B: &B,
-                    G: &dalek_constants::RISTRETTO_BASEPOINT_POINT,
-                    H: &H,
+                    G: &G,
+                    H: &H_aff,
                 },
             );
 
@@ -163,11 +183,12 @@ fn create_batch_and_batch_verify() {
             H: messages
                 .iter()
                 .map(
-                    |message| RistrettoPoint::hash_from_bytes::<Sha512>(message.as_bytes())
-                        .compress()
+                    |message| G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+                        message.as_bytes(), DOMAIN,
+                    ))
                 )
                 .collect(),
-            G: dalek_constants::RISTRETTO_BASEPOINT_COMPRESSED,
+            G: G,
         },
     )
     .is_ok());

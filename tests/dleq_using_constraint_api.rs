@@ -11,16 +11,14 @@
 #![allow(non_snake_case)]
 
 extern crate bincode;
-extern crate curve25519_dalek;
 extern crate serde;
 extern crate sha2;
 extern crate zkp;
 
 use self::sha2::Sha512;
 
-use curve25519_dalek::constants as dalek_constants;
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
+use bls12_381::{Scalar, G1Affine, G1Projective};
+use bls12_381::hash_to_curve::{HashToCurve, ExpandMsgXmd};
 
 use zkp::toolbox::{batch_verifier::BatchVerifier, prover::Prover, verifier::Verifier, SchnorrCS};
 use zkp::Transcript;
@@ -37,10 +35,15 @@ fn dleq_statement<CS: SchnorrCS>(
     cs.constrain(G, vec![(x, H)]);
 }
 
+const DOMAIN: &[u8] = b"DALEK-ZKP-V01-CS02-with-BLS12381G1_XMD:SHA-256_SSWU_RO_";
+
 #[test]
 fn create_and_verify_compact_dleq() {
-    let B = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(B.compress().as_bytes());
+    let B = G1Affine::generator();
+    let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+        B.to_compressed(), DOMAIN,
+    );
+    let H_aff = G1Affine::from(H);
 
     let (proof, cmpr_A, cmpr_G) = {
         let x = Scalar::from(89327492234u64);
@@ -54,9 +57,9 @@ fn create_and_verify_compact_dleq() {
         // XXX committing var names to transcript forces ordering (?)
         let var_x = prover.allocate_scalar(b"x", x);
         let (var_B, _) = prover.allocate_point(b"B", B);
-        let (var_H, _) = prover.allocate_point(b"H", H);
-        let (var_A, cmpr_A) = prover.allocate_point(b"A", A);
-        let (var_G, cmpr_G) = prover.allocate_point(b"G", G);
+        let (var_H, _) = prover.allocate_point(b"H", H_aff);
+        let (var_A, cmpr_A) = prover.allocate_point(b"A", G1Affine::from(A));
+        let (var_G, cmpr_G) = prover.allocate_point(b"G", G1Affine::from(G));
 
         dleq_statement(&mut prover, var_x, var_A, var_G, var_B, var_H);
 
@@ -67,8 +70,8 @@ fn create_and_verify_compact_dleq() {
     let mut verifier = Verifier::new(b"DLEQProof", &mut transcript);
 
     let var_x = verifier.allocate_scalar(b"x");
-    let var_B = verifier.allocate_point(b"B", B.compress()).unwrap();
-    let var_H = verifier.allocate_point(b"H", H.compress()).unwrap();
+    let var_B = verifier.allocate_point(b"B", B).unwrap();
+    let var_H = verifier.allocate_point(b"H", H_aff).unwrap();
     let var_A = verifier.allocate_point(b"A", cmpr_A).unwrap();
     let var_G = verifier.allocate_point(b"G", cmpr_G).unwrap();
 
@@ -79,8 +82,11 @@ fn create_and_verify_compact_dleq() {
 
 #[test]
 fn create_and_verify_batchable_dleq() {
-    let B = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(B.compress().as_bytes());
+    let B = G1Affine::generator();
+    let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+        B.to_compressed(), DOMAIN,
+    );
+    let H_aff = G1Affine::from(H);
 
     let (proof, cmpr_A, cmpr_G) = {
         let x = Scalar::from(89327492234u64);
@@ -94,9 +100,9 @@ fn create_and_verify_batchable_dleq() {
         // XXX committing var names to transcript forces ordering (?)
         let var_x = prover.allocate_scalar(b"x", x);
         let (var_B, _) = prover.allocate_point(b"B", B);
-        let (var_H, _) = prover.allocate_point(b"H", H);
-        let (var_A, cmpr_A) = prover.allocate_point(b"A", A);
-        let (var_G, cmpr_G) = prover.allocate_point(b"G", G);
+        let (var_H, _) = prover.allocate_point(b"H", H_aff);
+        let (var_A, cmpr_A) = prover.allocate_point(b"A", G1Affine::from(A));
+        let (var_G, cmpr_G) = prover.allocate_point(b"G", G1Affine::from(G));
 
         dleq_statement(&mut prover, var_x, var_A, var_G, var_B, var_H);
 
@@ -107,8 +113,8 @@ fn create_and_verify_batchable_dleq() {
     let mut verifier = Verifier::new(b"DLEQProof", &mut transcript);
 
     let var_x = verifier.allocate_scalar(b"x");
-    let var_B = verifier.allocate_point(b"B", B.compress()).unwrap();
-    let var_H = verifier.allocate_point(b"H", H.compress()).unwrap();
+    let var_B = verifier.allocate_point(b"B", B).unwrap();
+    let var_H = verifier.allocate_point(b"H", H_aff).unwrap();
     let var_A = verifier.allocate_point(b"A", cmpr_A).unwrap();
     let var_G = verifier.allocate_point(b"G", cmpr_G).unwrap();
 
@@ -119,8 +125,11 @@ fn create_and_verify_batchable_dleq() {
 
 #[test]
 fn create_and_batch_verify_batchable_dleq() {
-    let B = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(B.compress().as_bytes());
+    let B = G1Affine::generator();
+    let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+        B.to_compressed(), DOMAIN,
+    );
+    let H_aff = G1Affine::from(H);
 
     let batch_size = 16;
 
@@ -141,9 +150,9 @@ fn create_and_batch_verify_batchable_dleq() {
             // XXX committing var names to transcript forces ordering (?)
             let var_x = prover.allocate_scalar(b"x", x);
             let (var_B, _) = prover.allocate_point(b"B", B);
-            let (var_H, _) = prover.allocate_point(b"H", H);
-            let (var_A, cmpr_A) = prover.allocate_point(b"A", A);
-            let (var_G, cmpr_G) = prover.allocate_point(b"G", G);
+            let (var_H, _) = prover.allocate_point(b"H", H_aff);
+            let (var_A, cmpr_A) = prover.allocate_point(b"A", G1Affine::from(A));
+            let (var_G, cmpr_G) = prover.allocate_point(b"G", G1Affine::from(G));
 
             dleq_statement(&mut prover, var_x, var_A, var_G, var_B, var_H);
 
@@ -159,8 +168,8 @@ fn create_and_batch_verify_batchable_dleq() {
     let mut verifier = BatchVerifier::new(b"DLEQProof", batch_size, transcript_refs).unwrap();
 
     let var_x = verifier.allocate_scalar(b"x");
-    let var_B = verifier.allocate_static_point(b"B", B.compress()).unwrap();
-    let var_H = verifier.allocate_static_point(b"H", H.compress()).unwrap();
+    let var_B = verifier.allocate_static_point(b"B", B).unwrap();
+    let var_H = verifier.allocate_static_point(b"H", H_aff).unwrap();
     let var_A = verifier.allocate_instance_point(b"A", cmpr_As).unwrap();
     let var_G = verifier.allocate_instance_point(b"G", cmpr_Gs).unwrap();
 

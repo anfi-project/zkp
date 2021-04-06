@@ -12,14 +12,14 @@
 extern crate rand;
 use rand::{thread_rng, CryptoRng, RngCore};
 
-extern crate curve25519_dalek;
-use curve25519_dalek::constants as dalek_constants;
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
+use bls12_381::{Scalar, G1Affine, G1Projective, G1COMP_BYTES};
+use bls12_381::hash_to_curve::{HashToCurve, ExpandMsgXmd};
+use ff::Field;
+use sha2::Sha512;
 
-#[macro_use]
-extern crate zkp;
-pub use zkp::Transcript;
+pub use zkp::{Transcript, define_proof};
+
+const DOMAIN: &[u8] = b"DALEK-ZKP-V01-CS02-with-BLS12381G1_XMD:SHA-256_SSWU_RO_";
 
 define_proof! {sig_proof, "Sig", (x), (A), (B) : A = (x * B) }
 define_proof! {vrf_proof, "VRF", (x), (A, G, H), (B) : A = (x * B), G = (x * H) }
@@ -27,17 +27,19 @@ define_proof! {vrf_proof, "VRF", (x), (A, G, H), (B) : A = (x * B), G = (x * H) 
 /// Defines how the construction interacts with the transcript.
 trait TranscriptProtocol {
     fn append_message_example(&mut self, message: &[u8]);
-    fn hash_to_group(self) -> RistrettoPoint;
+    fn hash_to_group(self) -> G1Affine;
 }
 
 impl TranscriptProtocol for Transcript {
     fn append_message_example(&mut self, message: &[u8]) {
         self.append_message(b"msg", message);
     }
-    fn hash_to_group(mut self) -> RistrettoPoint {
-        let mut bytes = [0u8; 64];
+    fn hash_to_group(mut self) -> G1Affine {
+        let mut bytes = [0u8; G1COMP_BYTES];
         self.challenge_bytes(b"output", &mut bytes);
-        RistrettoPoint::from_uniform_bytes(&bytes)
+        G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+            bytes, DOMAIN,
+        ))
     }
 }
 
@@ -51,12 +53,12 @@ impl SecretKey {
 }
 
 #[derive(Copy, Clone)]
-pub struct PublicKey(RistrettoPoint, CompressedRistretto);
+pub struct PublicKey(G1Affine, G1Projective);
 
 impl<'a> From<&'a SecretKey> for PublicKey {
     fn from(sk: &'a SecretKey) -> PublicKey {
-        let pk = &sk.0 * &dalek_constants::RISTRETTO_BASEPOINT_TABLE;
-        PublicKey(pk, pk.compress())
+        let pk = G1Affine::generator() * &sk.0;
+        PublicKey(G1Affine::from(pk), pk)
     }
 }
 
@@ -74,7 +76,7 @@ impl From<SecretKey> for KeyPair {
 
 pub struct Signature(sig_proof::BatchableProof);
 
-pub struct VrfOutput(CompressedRistretto);
+pub struct VrfOutput(G1Affine);
 
 pub struct VrfProof(vrf_proof::CompactProof);
 
@@ -90,7 +92,7 @@ impl KeyPair {
             sig_proof::ProveAssignments {
                 x: &self.sk.0,
                 A: &self.pk.0,
-                B: &dalek_constants::RISTRETTO_BASEPOINT_POINT,
+                B: &G1Affine::generator(),
             },
         );
 
@@ -109,13 +111,13 @@ impl KeyPair {
         let H = function_transcript.hash_to_group();
 
         // Compute the VRF output G and form a proof
-        let G = &H * &self.sk.0;
+        let G = G1Affine::from(&H * &self.sk.0);
         let (proof, points) = vrf_proof::prove_compact(
             proof_transcript,
             vrf_proof::ProveAssignments {
                 x: &self.sk.0,
                 A: &self.pk.0,
-                B: &dalek_constants::RISTRETTO_BASEPOINT_POINT,
+                B: &G1Affine::generator(),
                 G: &G,
                 H: &H,
             },
@@ -137,8 +139,8 @@ impl Signature {
             &self.0,
             sig_transcript,
             sig_proof::VerifyAssignments {
-                A: &pubkey.1,
-                B: &dalek_constants::RISTRETTO_BASEPOINT_COMPRESSED,
+                A: &pubkey.0,
+                B: &G1Affine::generator(),
             },
         )
         .map_err(|_discard_error_info_in_test_code| ())
@@ -157,14 +159,14 @@ impl VrfOutput {
     ) -> Result<(), ()> {
         // Use function_transcript to hash the message to a point H
         function_transcript.append_message_example(message);
-        let H = function_transcript.hash_to_group().compress();
+        let H = function_transcript.hash_to_group();
 
         vrf_proof::verify_compact(
             &proof.0,
             proof_transcript,
             vrf_proof::VerifyAssignments {
-                A: &pubkey.1,
-                B: &dalek_constants::RISTRETTO_BASEPOINT_COMPRESSED,
+                A: &pubkey.0,
+                B: &G1Affine::generator(),
                 G: &self.0,
                 H: &H,
             },
