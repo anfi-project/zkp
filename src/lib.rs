@@ -20,7 +20,7 @@
 //! Docs will only build on nightly Rust until
 //! [RFC 1990 stabilizes](https://github.com/rust-lang/rust/issues/44732).
 
-extern crate serde;
+pub extern crate serde;
 
 #[doc(hidden)]
 #[macro_use]
@@ -28,9 +28,15 @@ pub extern crate serde_derive;
 #[doc(hidden)]
 pub extern crate bls12_381;
 #[doc(hidden)]
+pub extern crate ff;
+#[doc(hidden)]
+pub extern crate group;
+#[doc(hidden)]
 pub extern crate merlin;
 #[doc(hidden)]
 pub extern crate rand;
+// #[doc(hidden)]
+// pub extern crate serde;
 
 pub use merlin::Transcript;
 

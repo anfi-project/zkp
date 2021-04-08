@@ -1,8 +1,7 @@
-// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use bls12_381::{Scalar, G1Affine};
-use curve25519_dalek::traits::IsIdentity;
-
 use merlin::Transcript;
+
+use group::Group;
+use group::prime::PrimeCurve;
 
 use errors::ProofError;
 
@@ -17,7 +16,7 @@ pub trait SchnorrCS {
     );
 }
 
-pub trait TranscriptProtocol {
+pub trait TranscriptProtocol<G> where G: PrimeCurve {
     /// Appends `label` to the transcript as a domain separator.
     fn domain_sep(&mut self, label: &'static [u8]);
 
@@ -35,7 +34,7 @@ pub trait TranscriptProtocol {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     );
 
     /// Check that point variable is not the identity and
@@ -48,7 +47,7 @@ pub trait TranscriptProtocol {
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError>;
 
     /// Append a blinding factor commitment to the transcript, for use by
@@ -60,7 +59,7 @@ pub trait TranscriptProtocol {
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     );
 
     /// Check that a blinding factor commitment is not the identity and
@@ -73,14 +72,14 @@ pub trait TranscriptProtocol {
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError>;
 
     /// Get a scalar challenge from the transcript.
-    fn get_challenge(&mut self, label: &'static [u8]) -> Scalar;
+    fn get_challenge(&mut self, label: &'static [u8]) -> <G as Group>::Scalar;
 }
 
-impl TranscriptProtocol for Transcript {
+impl<G> TranscriptProtocol<G> for Transcript {
     fn domain_sep(&mut self, label: &'static [u8]) {
         self.commit_bytes(b"dom-sep", b"schnorrzkp/1.0/bls12_381");
         self.commit_bytes(b"dom-sep", label);
@@ -93,7 +92,7 @@ impl TranscriptProtocol for Transcript {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) {
         let encoding = point.compress();
         self.commit_bytes(b"ptvar", label);
@@ -103,7 +102,7 @@ impl TranscriptProtocol for Transcript {
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError> {
         if point.is_identity() {
             return Err(ProofError::VerificationFailure);
@@ -116,7 +115,7 @@ impl TranscriptProtocol for Transcript {
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) {
         let encoding = point.compress();
         self.commit_bytes(b"blindcom", label);
@@ -126,7 +125,7 @@ impl TranscriptProtocol for Transcript {
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError> {
         if point.is_identity() {
             return Err(ProofError::VerificationFailure);
@@ -136,9 +135,16 @@ impl TranscriptProtocol for Transcript {
         Ok(())
     }
 
-    fn get_challenge(&mut self, label: &'static [u8]) -> Scalar {
-        let mut bytes = [0; 64];
-        self.challenge_bytes(label, &mut bytes);
-        Scalar::from_bytes_mod_order_wide(&bytes)
+    // fn get_challenge(&mut self, label: &'static [u8]) -> <G as Group>::Scalar {
+    //     let mut bytes = [0; 64];
+    //     self.challenge_bytes(label, &mut bytes);
+    //     Scalar::from_bytes_mod_order_wide(&bytes)
+    // }
+
+    fn get_challenge(&mut self, label: &'static [u8]) -> <G as group::Group>::Scalar {
+        let x = <G as group::Group>::Scalar::zero().to_repr();
+        // let mut bytes = [0u8; 32];
+        self.challenge_bytes(label, x.as_mut());
+        <G as group::Group>::Scalar::from_repr(x).unwrap()
     }
 }

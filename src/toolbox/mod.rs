@@ -41,8 +41,9 @@ pub mod prover;
 /// Implements proof verification of compact and batchable proofs.
 pub mod verifier;
 
-// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use bls12_381::{Scalar, G1Affine, G1Projective};
+use ff::{Field, PrimeField};
+use group::{Group, GroupEncoding};
+use group::prime::{PrimeCurve};
 
 use crate::{ProofError, Transcript};
 
@@ -98,7 +99,7 @@ pub trait SchnorrCS {
 
 /// This trait defines the wire format for how the constraint system
 /// interacts with the proof transcript.
-pub trait TranscriptProtocol {
+pub trait TranscriptProtocol<G> where G: PrimeCurve + Group + GroupEncoding {
     /// Appends `label` to the transcript as a domain separator.
     fn domain_sep(&mut self, label: &'static [u8]);
 
@@ -116,7 +117,7 @@ pub trait TranscriptProtocol {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     );
 
     /// Check that point variable is not the identity and
@@ -129,7 +130,7 @@ pub trait TranscriptProtocol {
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError>;
 
     /// Append a blinding factor commitment to the transcript, for use by
@@ -141,7 +142,7 @@ pub trait TranscriptProtocol {
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     );
 
     /// Check that a blinding factor commitment is not the identity and
@@ -154,14 +155,17 @@ pub trait TranscriptProtocol {
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError>;
 
     /// Get a scalar challenge from the transcript.
-    fn get_challenge(&mut self, label: &'static [u8]) -> Scalar;
+    fn get_challenge(&mut self, label: &'static [u8]) -> <G as group::Group>::Scalar;
 }
 
-impl TranscriptProtocol for Transcript {
+impl<G> TranscriptProtocol<G> for Transcript 
+    where G: PrimeCurve + Group + GroupEncoding,
+    G::Repr: AsMut<[u8]>, // + PrimeField
+    {
     fn domain_sep(&mut self, label: &'static [u8]) {
         self.append_message(b"dom-sep", b"schnorrzkp/1.0/bls12_381");
         self.append_message(b"dom-sep", label);
@@ -174,54 +178,57 @@ impl TranscriptProtocol for Transcript {
     fn append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) {
-        let encoding = point.to_compressed();
+        let encoding = point.to_bytes();
         self.append_message(b"ptvar", label);
-        self.append_message(b"val", &encoding);
+        self.append_message(b"val", encoding.as_ref());
         // encoding
     }
 
     fn validate_and_append_point_var(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError> {
-        if bool::from(point.is_identity()) {
+        if bool::from(<G as group::Group>::is_identity(&point)) {
             return Err(ProofError::VerificationFailure);
         }
         self.append_message(b"ptvar", label);
-        self.append_message(b"val", &point.to_compressed());
+        self.append_message(b"val", point.to_bytes().as_ref());
         Ok(())
     }
 
     fn append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) {
-        let encoding = point.to_compressed();
+        let encoding = point.to_bytes();
         self.append_message(b"blindcom", label);
-        self.append_message(b"val", &encoding);
+        self.append_message(b"val", encoding.as_ref());
         // point.clone()
     }
 
     fn validate_and_append_blinding_commitment(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError> {
-        if bool::from(point.is_identity()) {
+        if bool::from(<G as group::Group>::is_identity(&point)) {
             return Err(ProofError::VerificationFailure);
         }
         self.append_message(b"blindcom", label);
-        self.append_message(b"val", &point.to_compressed());
+        self.append_message(b"val", point.to_bytes().as_ref());
         Ok(())
     }
 
-    fn get_challenge(&mut self, label: &'static [u8]) -> Scalar {
-        let mut bytes = [0; 64];
-        self.challenge_bytes(label, &mut bytes);
-        Scalar::from_bytes_wide(&bytes)
+    fn get_challenge(&mut self, label: &'static [u8]) -> <G as group::Group>::Scalar {
+        // #![feature(const_generics)]
+        // #![feature(const_evaluatable_checked)]
+        let mut x = <G as group::Group>::Scalar::default().to_repr();
+        // let mut bytes = [0u8; (<G as group::Group>::Scalar::NUM_BITS/8) as usize];
+        self.challenge_bytes(label, &mut x);
+        <G as group::Group>::Scalar::from_repr(x).unwrap()
     }
 }

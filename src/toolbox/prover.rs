@@ -1,10 +1,13 @@
-use rand::thread_rng;
+use std::ops::{Add, Mul};
 
-// use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use bls12_381::{Scalar, G1Affine, G1Projective};
+use ff::{Field, PrimeField};
+use group::{Group, GroupEncoding};
+use group::prime::{PrimeCurve};
+use rand::thread_rng;
+use serde::{Deserialize, Serialize};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
-use crate::{BatchableProof, CompactProof, Transcript};
+use crate::{/*BatchableProof,*/ CompactProof, Transcript};
 
 /// Used to create proofs.
 ///
@@ -19,10 +22,10 @@ use crate::{BatchableProof, CompactProof, Transcript};
 /// Finally, use [`Prover::prove_compact`] or
 /// [`Prover::prove_batchable`] to consume the prover and produce a
 /// proof.
-pub struct Prover<'a> {
+pub struct Prover<'a, G> where G: Group {
     transcript: &'a mut Transcript,
-    scalars: Vec<Scalar>,
-    points: Vec<G1Affine>,
+    scalars: Vec<<G as group::Group>::Scalar>,
+    points: Vec<G>,
     point_labels: Vec<&'static [u8]>,
     constraints: Vec<(PointVar, Vec<(ScalarVar, PointVar)>)>,
 }
@@ -34,11 +37,18 @@ pub struct ScalarVar(usize);
 #[derive(Copy, Clone)]
 pub struct PointVar(usize);
 
-impl<'a> Prover<'a> {
+impl<'a, 'b, 'c, G> Prover<'a, G> 
+    where G: GroupEncoding + Group + PrimeCurve,
+        //   <G as GroupEncoding>::Repr: PrimeField,
+          <G as Group>::Scalar: Serialize + Deserialize<'static>,
+          &'b <G as Group>::Scalar: Mul<&'b <G as Group>::Scalar>,
+          <&'b <G as Group>::Scalar as Mul<&'b <G as Group>::Scalar>>::Output: 'b + Add<&'b <G as Group>::Scalar>,
+        //   <<&'b <G as Group>::Scalar as Mul<&'b <G as Group>::Scalar>>::Output as Add<&'b <G as Group>::Scalar>>::Output: Group::Scalar,
+    {
     /// Construct a new prover.  The `proof_label` disambiguates proof
     /// statements.
     pub fn new(proof_label: &'static [u8], transcript: &'a mut Transcript) -> Self {
-        transcript.domain_sep(proof_label);
+        TranscriptProtocol::<G>::domain_sep(transcript, proof_label);
         Prover {
             transcript,
             scalars: Vec::default(),
@@ -49,8 +59,8 @@ impl<'a> Prover<'a> {
     }
 
     /// Allocate and assign a secret variable with the given `label`.
-    pub fn allocate_scalar(&mut self, label: &'static [u8], assignment: Scalar) -> ScalarVar {
-        self.transcript.append_scalar_var(label);
+    pub fn allocate_scalar(&mut self, label: &'static [u8], assignment: <G as group::Group>::Scalar) -> ScalarVar {
+        TranscriptProtocol::<G>::append_scalar_var(self.transcript, label);
         self.scalars.push(assignment);
         ScalarVar(self.scalars.len() - 1)
     }
@@ -63,20 +73,20 @@ impl<'a> Prover<'a> {
     pub fn allocate_point(
         &mut self,
         label: &'static [u8],
-        assignment: G1Affine,
-    ) -> (PointVar, G1Affine) {
-        let compressed = self.transcript.append_point_var(label, &assignment);
+        assignment: G,
+    ) -> (PointVar, G) {
+        self.transcript.append_point_var(label, &assignment);
         self.points.push(assignment);
         self.point_labels.push(label);
         (PointVar(self.points.len() - 1), assignment)
     }
 
     /// The compact and batchable proofs differ only by which data they store.
-    fn prove_impl(self) -> (Scalar, Vec<Scalar>, Vec<G1Affine>) {
+    fn prove_impl(self) -> (<G as group::Group>::Scalar, Vec<<G as group::Group>::Scalar>, Vec<G>) {
         // Construct a TranscriptRng
         let mut rng_builder = self.transcript.build_rng();
         for scalar in &self.scalars {
-            rng_builder = rng_builder.rekey_with_witness_bytes(b"", &scalar.to_bytes());
+            rng_builder = rng_builder.rekey_with_witness_bytes(b"", scalar.to_repr().as_ref());
         }
         let mut transcript_rng = rng_builder.finalize(&mut thread_rng());
 
@@ -84,41 +94,37 @@ impl<'a> Prover<'a> {
         let blindings = self
             .scalars
             .iter()
-            .map(|_| crate::util::rand_scalar(&mut transcript_rng))
-            .collect::<Vec<Scalar>>();
+            .map(|_| <G as group::Group>::Scalar::random(&mut transcript_rng))
+            .collect::<Vec<<G as group::Group>::Scalar>>();
 
         // Commit to each blinded LHS
         let mut commitments = Vec::with_capacity(self.constraints.len());
         for (lhs_var, rhs_lc) in &self.constraints {
-            let mut commitment: G1Projective = G1Projective::identity();
+            let mut commitment: G = <G as group::Group>::identity();
             for (sc_var, pt_var) in rhs_lc.iter() {
                 commitment += self.points[pt_var.0] * blindings[sc_var.0];
             }
-            commitment -= G1Projective::identity();
-            
-            // RistrettoPoint::multiscalar_mul(
-            //     rhs_lc.iter().map(|(sc_var, _pt_var)| blindings[sc_var.0]),
-            //     rhs_lc.iter().map(|(_sc_var, pt_var)| self.points[pt_var.0]),
-            // );
+            commitment -= <G as group::Group>::identity();
+
             let _encoding = self
                 .transcript
-                .append_blinding_commitment(self.point_labels[lhs_var.0], &G1Affine::from(commitment));
+                .append_blinding_commitment(self.point_labels[lhs_var.0], &G::from(commitment));
 
             // commitments.push(encoding);
-            commitments.push(G1Affine::from(commitment));
+            commitments.push(G::from(commitment));
         }
 
         // Obtain a scalar challenge and compute responses
-        let challenge = self.transcript.get_challenge(b"chal");
+        let challenge = TranscriptProtocol::<G>::get_challenge(self.transcript, b"chal");
         let responses = Iterator::zip(self.scalars.iter(), blindings.iter())
-            .map(|(s, b)| s * challenge + b)
-            .collect::<Vec<Scalar>>();
+            .map(|(s, b)| <G as Group>::Scalar::add(*b, <G as Group>::Scalar::mul(*s, challenge)) ) // ::from(s * challenge + b))
+            .collect::<Vec<<G as group::Group>::Scalar>>();
 
         (challenge, responses, commitments)
     }
 
     /// Consume this prover to produce a compact proof.
-    pub fn prove_compact(self) -> CompactProof {
+    pub fn prove_compact(self) -> CompactProof<G> {
         let (challenge, responses, _) = self.prove_impl();
 
         CompactProof {
@@ -127,18 +133,18 @@ impl<'a> Prover<'a> {
         }
     }
 
-    /// Consume this prover to produce a batchable proof.
-    pub fn prove_batchable(self) -> BatchableProof {
-        let (_, responses, commitments) = self.prove_impl();
+    // /// Consume this prover to produce a batchable proof.
+    // pub fn prove_batchable(self) -> BatchableProof<G> {
+    //     let (_, responses, commitments) = self.prove_impl();
 
-        BatchableProof {
-            commitments,
-            responses,
-        }
-    }
+    //     BatchableProof {
+    //         commitments,
+    //         responses,
+    //     }
+    // }
 }
 
-impl<'a> SchnorrCS for Prover<'a> {
+impl<'a, G> SchnorrCS for Prover<'a, G> where G: PrimeCurve + Group {
     type ScalarVar = ScalarVar;
     type PointVar = PointVar;
 

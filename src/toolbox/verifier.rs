@@ -1,10 +1,13 @@
-use rand::{thread_rng, Rng};
-use std::iter;
+use std::ops::{AddAssign, Mul};
 
-use bls12_381::{Scalar, G1Affine, G1Projective};
+use ff::{Field, PrimeField};
+use group::{Group, GroupEncoding};
+use group::prime::{PrimeCurve};
+use rand::thread_rng;
+use serde::{Deserialize, Serialize};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
-use crate::{BatchableProof, CompactProof, ProofError, Transcript};
+use crate::{/*BatchableProof,*/ CompactProof, ProofError, Transcript};
 
 /// Used to produce verification results.
 ///
@@ -21,10 +24,10 @@ use crate::{BatchableProof, CompactProof, ProofError, Transcript};
 /// Finally, use [`Verifier::verify_compact`] or
 /// [`Verifier::verify_batchable`] to consume the verifier and produce
 /// a verification result.
-pub struct Verifier<'a> {
+pub struct Verifier<'a, G> where G: PrimeCurve + Group {
     transcript: &'a mut Transcript,
     num_scalars: usize,
-    points: Vec<G1Affine>,
+    points: Vec<G>,
     point_labels: Vec<&'static [u8]>,
     constraints: Vec<(PointVar, Vec<(ScalarVar, PointVar)>)>,
 }
@@ -39,11 +42,18 @@ pub struct ScalarVar(usize);
 #[derive(Copy, Clone)]
 pub struct PointVar(usize);
 
-impl<'a> Verifier<'a> {
+impl<'a, 'b, G> Verifier<'a, G>
+    where G: PrimeCurve + GroupEncoding + Group,
+          &'b G: Mul<&'b <G as Group>::Scalar>,
+        //   <G as GroupEncoding>::Repr: PrimeField,
+          <G as Group>::Scalar: AddAssign<<G as Group>::Scalar> + Serialize + Deserialize<'static>,
+          &'b <G as Group>::Scalar: Mul<&'b <G as Group>::Scalar>,
+          <&'b G as Mul<&'b <G as Group>::Scalar>>::Output: Group + AddAssign<<&'b G as Mul<&'b <G as Group>::Scalar>>::Output>,
+    {
     /// Construct a verifier for the proof statement with the given
     /// `proof_label`, operating on the given `transcript`.
     pub fn new(proof_label: &'static [u8], transcript: &'a mut Transcript) -> Self {
-        transcript.domain_sep(proof_label);
+        TranscriptProtocol::<G>::domain_sep(transcript, proof_label);
         Verifier {
             transcript,
             num_scalars: 0,
@@ -55,7 +65,7 @@ impl<'a> Verifier<'a> {
 
     /// Allocate a placeholder scalar variable, without an assignment.
     pub fn allocate_scalar(&mut self, label: &'static [u8]) -> ScalarVar {
-        self.transcript.append_scalar_var(label);
+        TranscriptProtocol::<G>::append_scalar_var(self.transcript, label);
         self.num_scalars += 1;
         ScalarVar(self.num_scalars - 1)
     }
@@ -65,7 +75,7 @@ impl<'a> Verifier<'a> {
     pub fn allocate_point(
         &mut self,
         label: &'static [u8],
-        assignment: G1Affine,
+        assignment: G,
     ) -> Result<PointVar, ProofError> {
         self.transcript
             .validate_and_append_point_var(label, &assignment)?;
@@ -75,7 +85,7 @@ impl<'a> Verifier<'a> {
     }
 
     /// Consume the verifier to produce a verification of a [`CompactProof`].
-    pub fn verify_compact(self, proof: &CompactProof) -> Result<(), ProofError> {
+    pub fn verify_compact(self, proof: &CompactProof<G>) -> Result<(), ProofError> {
         // Check that there are as many responses as secret variables
         if proof.responses.len() != self.num_scalars {
             return Err(ProofError::VerificationFailure);
@@ -96,7 +106,7 @@ impl<'a> Verifier<'a> {
         let minus_c = -proof.challenge;
         for (lhs_var, rhs_lc) in &self.constraints {
 
-            let mut commitment: G1Projective = self.points[lhs_var.0] * minus_c;
+            let mut commitment = self.points[lhs_var.0] * minus_c;
             for (sc_var, pt_var) in rhs_lc.iter() {
                 commitment += self.points[pt_var.0] * proof.responses[sc_var.0];
             }
@@ -112,11 +122,11 @@ impl<'a> Verifier<'a> {
             // );
 
             self.transcript
-                .append_blinding_commitment(self.point_labels[lhs_var.0], &G1Affine::from(commitment));
+                .append_blinding_commitment(self.point_labels[lhs_var.0], &G::from(commitment));
         }
 
         // Recompute the challenge and check if it's the claimed one
-        let challenge = self.transcript.get_challenge(b"chal");
+        let challenge: <G as Group>::Scalar = TranscriptProtocol::<G>::get_challenge(self.transcript, b"chal");
 
         if challenge == proof.challenge {
             Ok(())
@@ -125,66 +135,66 @@ impl<'a> Verifier<'a> {
         }
     }
 
-    /// Consume the verifier to produce a verification of a [`BatchableProof`].
-    pub fn verify_batchable(self, proof: &BatchableProof) -> Result<(), ProofError> {
-        // Check that there are as many responses as secret variables
-        if proof.responses.len() != self.num_scalars {
-            return Err(ProofError::VerificationFailure);
-        }
-        // Check that there are as many commitments as constraints
-        if proof.commitments.len() != self.constraints.len() {
-            return Err(ProofError::VerificationFailure);
-        }
+    // /// Consume the verifier to produce a verification of a [`BatchableProof`].
+    // pub fn verify_batchable(self, proof: &'b BatchableProof<G>) -> Result<(), ProofError> {
+    //     // Check that there are as many responses as secret variables
+    //     if proof.responses.len() != self.num_scalars {
+    //         return Err(ProofError::VerificationFailure);
+    //     }
+    //     // Check that there are as many commitments as constraints
+    //     if proof.commitments.len() != self.constraints.len() {
+    //         return Err(ProofError::VerificationFailure);
+    //     }
 
-        // Feed the prover's commitments into the transcript:
-        for (i, commitment) in proof.commitments.iter().enumerate() {
-            let (ref lhs_var, ref _rhs_lc) = self.constraints[i];
-            self.transcript.validate_and_append_blinding_commitment(
-                self.point_labels[lhs_var.0],
-                &commitment,
-            )?;
-        }
+    //     // Feed the prover's commitments into the transcript:
+    //     for (i, commitment) in proof.commitments.iter().enumerate() {
+    //         let (ref lhs_var, ref _rhs_lc) = self.constraints[i];
+    //         self.transcript.validate_and_append_blinding_commitment(
+    //             self.point_labels[lhs_var.0],
+    //             commitment,
+    //         )?;
+    //     }
 
-        let minus_c = -self.transcript.get_challenge(b"chal");
+    //     let minus_c = -TranscriptProtocol::<G>::get_challenge(self.transcript, b"chal");
 
-        let commitments_offset = self.points.len();
-        let combined_points: Vec<&G1Affine> = self.points.iter().chain(proof.commitments.iter()).collect();
+    //     let commitments_offset = self.points.len();
+    //     let combined_points: Vec<&G> = self.points.iter().chain(proof.commitments.iter()).collect();
 
-        let mut coeffs = vec![Scalar::zero(); self.points.len() + proof.commitments.len()];
-        // For each constraint of the form Q = sum(P_i, x_i),
-        // we want to ensure Q_com = sum(P_i, resp_i) - c * Q,
-        // so add the check rand*( sum(P_i, resp_i) - c * Q - Q_com ) == 0
-        for i in 0..self.constraints.len() {
-            let (ref lhs_var, ref rhs_lc) = self.constraints[i];
-            let random_factor = crate::util::rand_scalar(&mut thread_rng()); //  Scalar::from(thread_rng().gen::<u128>());
+    //     let mut coeffs = vec![<G as Group>::Scalar::zero(); self.points.len() + proof.commitments.len()];
+    //     // For each constraint of the form Q = sum(P_i, x_i),
+    //     // we want to ensure Q_com = sum(P_i, resp_i) - c * Q,
+    //     // so add the check rand*( sum(P_i, resp_i) - c * Q - Q_com ) == 0
+    //     for i in 0..self.constraints.len() {
+    //         let (ref lhs_var, ref rhs_lc) = self.constraints[i];
+    //         let random_factor = <G as Group>::Scalar::random(&mut thread_rng());
 
-            coeffs[commitments_offset + i] += -random_factor;
-            coeffs[lhs_var.0] += random_factor * minus_c;
-            for (sc_var, pt_var) in rhs_lc {
-                coeffs[pt_var.0] += random_factor * proof.responses[sc_var.0];
-            }
-        }
+    //         coeffs[commitments_offset + i] += -random_factor;
+    //         coeffs[lhs_var.0] += random_factor * minus_c;
+    //         for (sc_var, pt_var) in rhs_lc {
+    //             coeffs[pt_var.0] += random_factor * proof.responses[sc_var.0];
+    //         }
+    //     }
 
-        let mut check: G1Projective = combined_points[0] * coeffs[0];
-        for i in 1..coeffs.len() {
-            check += combined_points[i] * coeffs[i];
-        }
+    //     let mut check = combined_points[0] * &coeffs[0];
+    //     for i in 1..coeffs.len() {
+    //         check += combined_points[i] * &coeffs[i];
+    //     }
 
-        // let check = RistrettoPoint::optional_multiscalar_mul(
-        //     &coeffs,
-        //     combined_points.map(|pt| pt.decompress()),
-        // )
-        // .ok_or(ProofError::VerificationFailure)?;
+    //     // let check = RistrettoPoint::optional_multiscalar_mul(
+    //     //     &coeffs,
+    //     //     combined_points.map(|pt| pt.decompress()),
+    //     // )
+    //     // .ok_or(ProofError::VerificationFailure)?;
 
-        if bool::from(check.is_identity()) {
-            Ok(())
-        } else {
-            Err(ProofError::VerificationFailure)
-        }
-    }
+    //     if bool::from(<<&G as Mul<&'b <G as Group>::Scalar>>::Output as Group>::is_identity(&check)) {
+    //         Ok(())
+    //     } else {
+    //         Err(ProofError::VerificationFailure)
+    //     }
+    // }
 }
 
-impl<'a> SchnorrCS for Verifier<'a> {
+impl<'a, G> SchnorrCS for Verifier<'a, G> where G: Group + PrimeCurve {
     type ScalarVar = ScalarVar;
     type PointVar = PointVar;
 
