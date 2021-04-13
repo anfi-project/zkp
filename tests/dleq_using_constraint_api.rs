@@ -12,16 +12,14 @@
 
 extern crate bincode;
 extern crate serde;
-extern crate sha2;
-extern crate zkp;
 
-use self::sha2::Sha512;
+use sha2::Sha512;
 
-use bls12_381::{Scalar, G1Affine, G1Projective};
+use bls12_381::{Scalar, G1Projective};
 use bls12_381::hash_to_curve::{HashToCurve, ExpandMsgXmd};
 use group::GroupEncoding;
 
-use zkp::toolbox::{batch_verifier::BatchVerifier, prover::Prover, verifier::Verifier, SchnorrCS};
+use zkp::toolbox::{/*batch_verifier::BatchVerifier, */prover::Prover, verifier::Verifier, SchnorrCS};
 use zkp::Transcript;
 
 fn dleq_statement<CS: SchnorrCS>(

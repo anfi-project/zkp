@@ -24,8 +24,8 @@ serde = "1"
 serde_derive = "1"
 thiserror = "1"
 bls12_381 = { path = "../bls12_381" }
-ff = "0.9.0"
-group = "0.9.0"
+ff = { path = "../ff" }
+group = { path = "../group" }
 
 [dev-dependencies]
 bincode = "1"

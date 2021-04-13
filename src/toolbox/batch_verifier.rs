@@ -1,13 +1,10 @@
 use std::ops::Neg;
 
-use ff::Field;
-use group::Group;
-use group::prime::{PrimeCurve, PrimeCurveAffine};
-use rand::thread_rng;
+use group::{Group, GroupEncoding};
+// use group::prime::{PrimeCurve};
 use serde::{Deserialize, Serialize};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
-use crate::util::Matrix;
 use crate::{/*BatchableProof,*/ ProofError, Transcript};
 
 /// Used to produce batch verification results.
@@ -29,7 +26,7 @@ use crate::{/*BatchableProof,*/ ProofError, Transcript};
 ///
 /// Finally, use [`BatchVerifier::verify_batchable`] to consume the
 /// verifier and produce a batch verification result.
-pub struct BatchVerifier<'a, G> where G: PrimeCurve + Group {
+pub struct BatchVerifier<'a, G> {
     batch_size: usize,
     transcripts: Vec<&'a mut Transcript>,
 
@@ -58,8 +55,7 @@ pub enum PointVar {
 }
 
 impl<'a, G> BatchVerifier<'a, G>
-    where G: PrimeCurve + Group,
-        //   G::Repr: PrimeField,
+    where G: Group + GroupEncoding,
           <G as Group>::Scalar: Neg + Serialize + Deserialize<'static>,
     {
     /// Construct a new batch verifier for the statement with the
@@ -251,7 +247,7 @@ impl<'a, G> BatchVerifier<'a, G>
     // }
 }
 
-impl<'a, G> SchnorrCS for BatchVerifier<'a, G> where G: PrimeCurve + Group {
+impl<'a, G> SchnorrCS for BatchVerifier<'a, G> {
     type ScalarVar = ScalarVar;
     type PointVar = PointVar;
 

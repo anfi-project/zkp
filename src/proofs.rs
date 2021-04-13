@@ -1,5 +1,4 @@
 use group::Group;
-use group::prime::PrimeCurveAffine;
 
 /// A Schnorr proof in compact format.
 ///

@@ -22,9 +22,9 @@ use crate::{/*BatchableProof,*/ CompactProof, Transcript};
 /// Finally, use [`Prover::prove_compact`] or
 /// [`Prover::prove_batchable`] to consume the prover and produce a
 /// proof.
-pub struct Prover<'a, G> where G: Group {
-    transcript: &'a mut Transcript,
-    scalars: Vec<<G as group::Group>::Scalar>,
+pub struct Prover<'transcript, G> where G: Group {
+    transcript: &'transcript mut Transcript,
+    scalars: Vec<<G as Group>::Scalar>,
     points: Vec<G>,
     point_labels: Vec<&'static [u8]>,
     constraints: Vec<(PointVar, Vec<(ScalarVar, PointVar)>)>,
@@ -37,17 +37,16 @@ pub struct ScalarVar(usize);
 #[derive(Copy, Clone)]
 pub struct PointVar(usize);
 
-impl<'a, 'b, 'c, G> Prover<'a, G> 
+impl<'transcript, G> Prover<'transcript, G> 
     where G: GroupEncoding + Group + PrimeCurve,
         //   <G as GroupEncoding>::Repr: PrimeField,
           <G as Group>::Scalar: Serialize + Deserialize<'static>,
-          &'b <G as Group>::Scalar: Mul<&'b <G as Group>::Scalar>,
-          <&'b <G as Group>::Scalar as Mul<&'b <G as Group>::Scalar>>::Output: 'b + Add<&'b <G as Group>::Scalar>,
+        //   <&'b <G as Group>::Scalar as Mul<&'b <G as Group>::Scalar>>::Output: 'b + Add<&'b <G as Group>::Scalar>,
         //   <<&'b <G as Group>::Scalar as Mul<&'b <G as Group>::Scalar>>::Output as Add<&'b <G as Group>::Scalar>>::Output: Group::Scalar,
     {
     /// Construct a new prover.  The `proof_label` disambiguates proof
     /// statements.
-    pub fn new(proof_label: &'static [u8], transcript: &'a mut Transcript) -> Self {
+    pub fn new(proof_label: &'static [u8], transcript: &'transcript mut Transcript) -> Self {
         TranscriptProtocol::<G>::domain_sep(transcript, proof_label);
         Prover {
             transcript,
@@ -82,7 +81,9 @@ impl<'a, 'b, 'c, G> Prover<'a, G>
     }
 
     /// The compact and batchable proofs differ only by which data they store.
-    fn prove_impl(self) -> (<G as group::Group>::Scalar, Vec<<G as group::Group>::Scalar>, Vec<G>) {
+    fn prove_impl(self) -> (<G as group::Group>::Scalar, Vec<<G as group::Group>::Scalar>, Vec<G>) 
+        where <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar>,
+    {
         // Construct a TranscriptRng
         let mut rng_builder = self.transcript.build_rng();
         for scalar in &self.scalars {
@@ -110,7 +111,6 @@ impl<'a, 'b, 'c, G> Prover<'a, G>
                 .transcript
                 .append_blinding_commitment(self.point_labels[lhs_var.0], &G::from(commitment));
 
-            // commitments.push(encoding);
             commitments.push(G::from(commitment));
         }
 
@@ -124,7 +124,7 @@ impl<'a, 'b, 'c, G> Prover<'a, G>
     }
 
     /// Consume this prover to produce a compact proof.
-    pub fn prove_compact(self) -> CompactProof<G> {
+    pub fn prove_compact(self) -> CompactProof<G> where <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar> {
         let (challenge, responses, _) = self.prove_impl();
 
         CompactProof {
@@ -144,7 +144,7 @@ impl<'a, 'b, 'c, G> Prover<'a, G>
     // }
 }
 
-impl<'a, G> SchnorrCS for Prover<'a, G> where G: PrimeCurve + Group {
+impl<'transcript, G> SchnorrCS for Prover<'transcript, G> where G: Group {
     type ScalarVar = ScalarVar;
     type PointVar = PointVar;
 

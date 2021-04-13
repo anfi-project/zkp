@@ -1,9 +1,7 @@
 use std::ops::{AddAssign, Mul};
 
-use ff::{Field, PrimeField};
 use group::{Group, GroupEncoding};
-use group::prime::{PrimeCurve};
-use rand::thread_rng;
+// use group::prime::{PrimeCurve};
 use serde::{Deserialize, Serialize};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
@@ -24,7 +22,7 @@ use crate::{/*BatchableProof,*/ CompactProof, ProofError, Transcript};
 /// Finally, use [`Verifier::verify_compact`] or
 /// [`Verifier::verify_batchable`] to consume the verifier and produce
 /// a verification result.
-pub struct Verifier<'a, G> where G: PrimeCurve + Group {
+pub struct Verifier<'a, G> {
     transcript: &'a mut Transcript,
     num_scalars: usize,
     points: Vec<G>,
@@ -43,7 +41,7 @@ pub struct ScalarVar(usize);
 pub struct PointVar(usize);
 
 impl<'a, 'b, G> Verifier<'a, G>
-    where G: PrimeCurve + GroupEncoding + Group,
+    where G: GroupEncoding + Group,
           &'b G: Mul<&'b <G as Group>::Scalar>,
         //   <G as GroupEncoding>::Repr: PrimeField,
           <G as Group>::Scalar: AddAssign<<G as Group>::Scalar> + Serialize + Deserialize<'static>,
@@ -194,7 +192,7 @@ impl<'a, 'b, G> Verifier<'a, G>
     // }
 }
 
-impl<'a, G> SchnorrCS for Verifier<'a, G> where G: Group + PrimeCurve {
+impl<'a, G> SchnorrCS for Verifier<'a, G> where G: Group {
     type ScalarVar = ScalarVar;
     type PointVar = PointVar;
 

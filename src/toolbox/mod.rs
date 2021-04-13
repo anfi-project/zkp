@@ -41,9 +41,9 @@ pub mod prover;
 /// Implements proof verification of compact and batchable proofs.
 pub mod verifier;
 
-use ff::{Field, PrimeField};
+use ff::{PrimeField};
 use group::{Group, GroupEncoding};
-use group::prime::{PrimeCurve};
+// use group::prime::{PrimeCurve, PrimeCurveAffine};
 
 use crate::{ProofError, Transcript};
 
@@ -99,7 +99,7 @@ pub trait SchnorrCS {
 
 /// This trait defines the wire format for how the constraint system
 /// interacts with the proof transcript.
-pub trait TranscriptProtocol<G> where G: PrimeCurve + Group + GroupEncoding {
+pub trait TranscriptProtocol<G> where G: Group {
     /// Appends `label` to the transcript as a domain separator.
     fn domain_sep(&mut self, label: &'static [u8]);
 
@@ -163,8 +163,10 @@ pub trait TranscriptProtocol<G> where G: PrimeCurve + Group + GroupEncoding {
 }
 
 impl<G> TranscriptProtocol<G> for Transcript 
-    where G: PrimeCurve + Group + GroupEncoding,
-    G::Repr: AsMut<[u8]>, // + PrimeField
+    where
+        G: Group + GroupEncoding,
+        G::Repr: AsMut<[u8]>,
+        // <<G as Group>::Scalar as PrimeField>::Repr: Debug
     {
     fn domain_sep(&mut self, label: &'static [u8]) {
         self.append_message(b"dom-sep", b"schnorrzkp/1.0/bls12_381");
@@ -191,7 +193,7 @@ impl<G> TranscriptProtocol<G> for Transcript
         label: &'static [u8],
         point: &G,
     ) -> Result<(), ProofError> {
-        if bool::from(<G as group::Group>::is_identity(&point)) {
+        if bool::from(<G as Group>::is_identity(&point)) {
             return Err(ProofError::VerificationFailure);
         }
         self.append_message(b"ptvar", label);
@@ -215,7 +217,7 @@ impl<G> TranscriptProtocol<G> for Transcript
         label: &'static [u8],
         point: &G,
     ) -> Result<(), ProofError> {
-        if bool::from(<G as group::Group>::is_identity(&point)) {
+        if bool::from(<G as Group>::is_identity(&point)) {
             return Err(ProofError::VerificationFailure);
         }
         self.append_message(b"blindcom", label);
@@ -223,12 +225,11 @@ impl<G> TranscriptProtocol<G> for Transcript
         Ok(())
     }
 
-    fn get_challenge(&mut self, label: &'static [u8]) -> <G as group::Group>::Scalar {
-        // #![feature(const_generics)]
-        // #![feature(const_evaluatable_checked)]
-        let mut x = <G as group::Group>::Scalar::default().to_repr();
-        // let mut bytes = [0u8; (<G as group::Group>::Scalar::NUM_BITS/8) as usize];
+    fn get_challenge(&mut self, label: &'static [u8]) -> /*<<G as PrimeCurveAffine>::Curve as Group>::Scalar */ <G as Group>::Scalar
+    {
+        let mut x = <G as Group>::Scalar::default().to_repr();
         self.challenge_bytes(label, &mut x);
-        <G as group::Group>::Scalar::from_repr(x).unwrap()
+        // print!("{:?}", x);
+        <G as group::Group>::Scalar::from_repr_reduced(x)
     }
 }
