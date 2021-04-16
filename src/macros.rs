@@ -210,7 +210,6 @@ macro_rules! define_proof {
             ) -> (Prover<'a, G>, CompressedPoints<G>) where
                 G: PrimeCurve + Group,
                 <G as Group>::Scalar: Serialize + Deserialize<'static>,
-                // &'b <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar>,
            {
                 use self::internal::*;
                 use $crate::toolbox::prover::*;
@@ -269,7 +268,7 @@ macro_rules! define_proof {
             ) -> (CompactProof<G>, CompressedPoints<G>) where 
                 G: PrimeCurve + Group,
                 <G as Group>::Scalar: Serialize + Deserialize<'static>,
-                <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar>,
+                <G as Group>::Scalar: Mul,
             {
                 let (prover, compressed) = build_prover(transcript, assignments);
 
@@ -290,11 +289,8 @@ macro_rules! define_proof {
                 transcript: &'a mut Transcript,
                 assignments: VerifyAssignments<G>,
             ) -> Result<Verifier<'a, G>, ProofError> where 
-                G: PrimeCurve + Group,
-                &'b G: Mul<&'b <G as Group>::Scalar, Output=G>,
-                <G as Group>::Scalar: AddAssign + Serialize + Deserialize<'static>,
-                &'b <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar>,
-                // <&'b G as Mul<&'b <G as Group>::Scalar>>::Output: Group + AddAssign,
+                G: PrimeCurve + Group + Mul<<G as Group>::Scalar, Output=G>,
+                <G as Group>::Scalar: AddAssign + Serialize + Deserialize<'static> + Mul,
             {
                 use self::internal::*;
                 use $crate::toolbox::verifier::*;
@@ -331,11 +327,8 @@ macro_rules! define_proof {
                 transcript: &mut Transcript,
                 assignments: VerifyAssignments<G>,
             ) -> Result<(), ProofError> where
-                G: PrimeCurve + Group,
-                &'b G: Mul<&'b <G as Group>::Scalar, Output=G>,
-                <G as Group>::Scalar: AddAssign + Serialize + Deserialize<'static>,
-                &'b <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar>,
-                <&'b G as Mul<&'b <G as Group>::Scalar>>::Output: Group + AddAssign,
+                G: PrimeCurve + Group + Mul<<G as Group>::Scalar, Output=G>,
+                <G as Group>::Scalar: AddAssign + Serialize + Deserialize<'static> + Mul,
             {
                 let verifier = build_verifier(transcript, assignments)?;
 

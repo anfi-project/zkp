@@ -166,7 +166,6 @@ impl<G> TranscriptProtocol<G> for Transcript
     where
         G: Group + GroupEncoding,
         G::Repr: AsMut<[u8]>,
-        // <<G as Group>::Scalar as PrimeField>::Repr: Debug
     {
     fn domain_sep(&mut self, label: &'static [u8]) {
         self.append_message(b"dom-sep", b"schnorrzkp/1.0/bls12_381");

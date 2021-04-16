@@ -39,10 +39,7 @@ pub struct PointVar(usize);
 
 impl<'transcript, G> Prover<'transcript, G> 
     where G: GroupEncoding + Group + PrimeCurve,
-        //   <G as GroupEncoding>::Repr: PrimeField,
-          <G as Group>::Scalar: Serialize + Deserialize<'static>,
-        //   <&'b <G as Group>::Scalar as Mul<&'b <G as Group>::Scalar>>::Output: 'b + Add<&'b <G as Group>::Scalar>,
-        //   <<&'b <G as Group>::Scalar as Mul<&'b <G as Group>::Scalar>>::Output as Add<&'b <G as Group>::Scalar>>::Output: Group::Scalar,
+          <G as Group>::Scalar: Serialize + Deserialize<'static> + Mul,
     {
     /// Construct a new prover.  The `proof_label` disambiguates proof
     /// statements.
@@ -58,7 +55,7 @@ impl<'transcript, G> Prover<'transcript, G>
     }
 
     /// Allocate and assign a secret variable with the given `label`.
-    pub fn allocate_scalar(&mut self, label: &'static [u8], assignment: <G as group::Group>::Scalar) -> ScalarVar {
+    pub fn allocate_scalar(&mut self, label: &'static [u8], assignment: <G as Group>::Scalar) -> ScalarVar {
         TranscriptProtocol::<G>::append_scalar_var(self.transcript, label);
         self.scalars.push(assignment);
         ScalarVar(self.scalars.len() - 1)
@@ -81,9 +78,7 @@ impl<'transcript, G> Prover<'transcript, G>
     }
 
     /// The compact and batchable proofs differ only by which data they store.
-    fn prove_impl(self) -> (<G as group::Group>::Scalar, Vec<<G as group::Group>::Scalar>, Vec<G>) 
-        where <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar>,
-    {
+    fn prove_impl(self) -> (<G as Group>::Scalar, Vec<<G as Group>::Scalar>, Vec<G>) {
         // Construct a TranscriptRng
         let mut rng_builder = self.transcript.build_rng();
         for scalar in &self.scalars {
@@ -124,7 +119,7 @@ impl<'transcript, G> Prover<'transcript, G>
     }
 
     /// Consume this prover to produce a compact proof.
-    pub fn prove_compact(self) -> CompactProof<G> where <G as Group>::Scalar: Mul<Output=<G as Group>::Scalar> {
+    pub fn prove_compact(self) -> CompactProof<G> {
         let (challenge, responses, _) = self.prove_impl();
 
         CompactProof {

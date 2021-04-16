@@ -41,12 +41,8 @@ pub struct ScalarVar(usize);
 pub struct PointVar(usize);
 
 impl<'a, 'b, G> Verifier<'a, G>
-    where G: GroupEncoding + Group,
-          &'b G: Mul<&'b <G as Group>::Scalar>,
-        //   <G as GroupEncoding>::Repr: PrimeField,
-          <G as Group>::Scalar: AddAssign<<G as Group>::Scalar> + Serialize + Deserialize<'static>,
-          &'b <G as Group>::Scalar: Mul<&'b <G as Group>::Scalar>,
-          <&'b G as Mul<&'b <G as Group>::Scalar>>::Output: Group + AddAssign<<&'b G as Mul<&'b <G as Group>::Scalar>>::Output>,
+    where G: GroupEncoding + Group + Mul<<G as Group>::Scalar, Output=G>,
+          <G as Group>::Scalar: AddAssign + Mul + Serialize + Deserialize<'static>,
     {
     /// Construct a verifier for the proof statement with the given
     /// `proof_label`, operating on the given `transcript`.
