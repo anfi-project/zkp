@@ -76,120 +76,113 @@ fn create_and_verify_compact() {
     .is_ok());
 }
 
-// #[test]
-// fn create_and_verify_batchable() {
-//     // identical to above but with batchable proofs
-//     let G = G1Affine::generator();
+#[test]
+fn create_and_verify_batchable() {
+    // identical to above but with batchable proofs
+    let G = G1Projective::generator();
 
-//     // Prover's scope
-//     let (proof, points) = {
-//         let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
-//             b"A VRF input, for instance", DOMAIN,
-//         );
-//         let H_aff = G1Affine::from(H);
-//         let x = Scalar::from(89327492234u64).invert().unwrap();
-//         let A = G1Affine::from(&G * &x);
-//         let B = G1Affine::from(&H * &x);
+    // Prover's scope
+    let (proof, points) = {
+        let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
+            b"A VRF input, for instance", DOMAIN,
+        );
+        // let H_aff = G1Affine::from(H);
+        let x = Scalar::from(89327492234u64).invert().unwrap();
+        let A = G * x;
+        let B = H * x;
 
-//         let mut transcript = Transcript::new(b"DLEQTest");
-//         dleq::prove_batchable(
-//             &mut transcript,
-//             dleq::ProveAssignments {
-//                 x: &x,
-//                 A: &A,
-//                 B: &B,
-//                 G: &G,
-//                 H: &H_aff,
-//             },
-//         )
-//     };
+        let mut transcript = Transcript::new(b"DLEQTest");
+        dleq::prove_batchable(
+            &mut transcript,
+            dleq::ProveAssignments {
+                x: &x,
+                A: &A,
+                B: &B,
+                G: &G,
+                H: &H,
+            },
+        )
+    };
 
-//     // Serialize and parse bincode representation
-//     let proof_bytes = bincode::serialize(&proof).unwrap();
-//     let parsed_proof: dleq::BatchableProof = bincode::deserialize(&proof_bytes).unwrap();
+    // Serialize and parse bincode representation
+    let proof_bytes = bincode::serialize(&proof).unwrap();
+    let parsed_proof: dleq::BatchableProof<G1Projective> = bincode::deserialize(&proof_bytes).unwrap();
 
-//     // Verifier logic
-//     let mut transcript = Transcript::new(b"DLEQTest");
-//     assert!(dleq::verify_batchable(
-//         &parsed_proof,
-//         &mut transcript,
-//         dleq::VerifyAssignments {
-//             A: &points.A,
-//             B: &points.B,
-//             G: &G,
-//             H: &G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
-//                 b"A VRF input, for instance", DOMAIN,
-//             )),
-//         },
-//     )
-//     .is_ok());
-// }
+    // Verifier logic
+    let mut transcript = Transcript::new(b"DLEQTest");
+    assert!(dleq::verify_batchable(
+        &parsed_proof,
+        &mut transcript,
+        dleq::VerifyAssignments {
+            A: &points.A,
+            B: &points.B,
+            G: &G,
+            H: &<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(b"A VRF input, for instance", DOMAIN),
+        },
+    )
+    .is_ok());
+}
 
-// #[test]
-// fn create_batch_and_batch_verify() {
-//     let messages = [
-//         "One message",
-//         "Another message",
-//         "A third message",
-//         "A fourth message",
-//     ];
+#[test]
+fn create_batch_and_batch_verify() {
+    let messages = [
+        "One message",
+        "Another message",
+        "A third message",
+        "A fourth message",
+    ];
 
-//     let G = G1Affine::generator();
+    let G = G1Projective::generator();
 
-//     // Prover's scope
-//     let (proofs, pubkeys, vrf_outputs) = {
-//         let mut proofs = vec![];
-//         let mut pubkeys = vec![];
-//         let mut vrf_outputs = vec![];
+    // Prover's scope
+    let (proofs, pubkeys, vrf_outputs) = {
+        let mut proofs = vec![];
+        let mut pubkeys = vec![];
+        let mut vrf_outputs = vec![];
 
-//         for (i, message) in messages.iter().enumerate() {
-//             let H = G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
-//                 message.as_bytes(), DOMAIN,
-//             ));
-//             let H_aff = G1Affine::from(H);
-//             let x = Scalar::from(89327492234u64) * Scalar::from((i + 1) as u64);
-//             let A = G1Affine::from(&G * &x);
-//             let B = G1Affine::from(&H * &x);
+        for (i, message) in messages.iter().enumerate() {
+            let H = <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(message.as_bytes(), DOMAIN);
+            let x = Scalar::from(89327492234u64) * Scalar::from((i + 1) as u64);
+            let A = G * x;
+            let B = H * x;
 
-//             let mut transcript = Transcript::new(b"DLEQTest");
-//             let (proof, points) = dleq::prove_batchable(
-//                 &mut transcript,
-//                 dleq::ProveAssignments {
-//                     x: &x,
-//                     A: &A,
-//                     B: &B,
-//                     G: &G,
-//                     H: &H_aff,
-//                 },
-//             );
+            let mut transcript = Transcript::new(b"DLEQTest");
+            let (proof, points) = dleq::prove_batchable(
+                &mut transcript,
+                dleq::ProveAssignments {
+                    x: &x,
+                    A: &A,
+                    B: &B,
+                    G: &G,
+                    H: &H,
+                },
+            );
 
-//             proofs.push(proof);
-//             pubkeys.push(points.A);
-//             vrf_outputs.push(points.B);
-//         }
+            proofs.push(proof);
+            pubkeys.push(points.A);
+            vrf_outputs.push(points.B);
+        }
 
-//         (proofs, pubkeys, vrf_outputs)
-//     };
+        (proofs, pubkeys, vrf_outputs)
+    };
 
-//     // Verifier logic
-//     let mut transcripts = vec![Transcript::new(b"DLEQTest"); messages.len()];
+    // Verifier logic
+    let mut transcripts = vec![Transcript::new(b"DLEQTest"); messages.len()];
 
-//     assert!(dleq::batch_verify(
-//         &proofs,
-//         transcripts.iter_mut().collect(),
-//         dleq::BatchVerifyAssignments {
-//             A: pubkeys,
-//             B: vrf_outputs,
-//             H: messages
-//                 .iter()
-//                 .map(
-//                     |message| G1Affine::from(<G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(
-//                         message.as_bytes(), DOMAIN,
-//                     ))
-//                 )
-//                 .collect(),
-//             G: G,
-//         },
-//     )
-//     .is_ok());
-// }
+    assert!(dleq::batch_verify(
+        &proofs,
+        transcripts.iter_mut().collect(),
+        dleq::BatchVerifyAssignments {
+            A: pubkeys,
+            B: vrf_outputs,
+            H: messages
+                .iter()
+                .map(
+                    |message| <G1Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::hash_to_curve(message.as_bytes(), DOMAIN)
+                )
+                .collect(),
+            G: G,
+        },
+    )
+    .is_ok());
+}

@@ -13,7 +13,7 @@
 #![allow(non_snake_case)]
 
 extern crate bincode;
-extern crate curve25519_dalek;
+extern crate bls12_381;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -26,9 +26,10 @@ use test::Bencher;
 
 use self::sha2::Sha512;
 
-use curve25519_dalek::constants as dalek_constants;
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
+
+use bls12_381::{Scalar, G2Projective};
+use bls12_381::hash_to_curve::{HashToCurve, ExpandMsgXmd};
+use group::GroupEncoding;
 
 use zkp::toolbox::{batch_verifier::BatchVerifier, prover::Prover, verifier::Verifier, SchnorrCS};
 use zkp::Transcript;
@@ -46,10 +47,12 @@ fn dleq_statement<CS: SchnorrCS>(
     cs.constrain(B, vec![(x, H)]);
 }
 
+const DOMAIN: &[u8] = b"QUUX-V01-CS02-with-BLS12381G2_XMD:ZKP:DLEQ";
+
 #[bench]
 fn create_compact_dleq(b: &mut Bencher) {
-    let G = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(G.compress().as_bytes());
+    let G = G2Projective::generator();
+    let H = <G2Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::encode_to_curve(G.to_bytes(), DOMAIN);
 
     let x = Scalar::from(89327492234u64);
     let A = G * x;
@@ -73,8 +76,8 @@ fn create_compact_dleq(b: &mut Bencher) {
 
 #[bench]
 fn verify_compact_dleq(b: &mut Bencher) {
-    let G = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(G.compress().as_bytes());
+    let G = G2Projective::generator();
+    let H = <G2Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::encode_to_curve(G.to_bytes(), DOMAIN);
 
     let (proof, cmpr_A, cmpr_B) = {
         let x = Scalar::from(89327492234u64);
@@ -97,16 +100,16 @@ fn verify_compact_dleq(b: &mut Bencher) {
         (prover.prove_compact(), cmpr_A, cmpr_B)
     };
 
-    let cmpr_G = G.compress();
-    let cmpr_H = H.compress();
+    // let cmpr_G = G.compress();
+    // let cmpr_H = H.compress();
 
     b.iter(|| {
         let mut transcript = Transcript::new(b"DLEQTest");
         let mut verifier = Verifier::new(b"DLEQProof", &mut transcript);
 
         let var_x = verifier.allocate_scalar(b"x");
-        let var_G = verifier.allocate_point(b"G", cmpr_G).unwrap();
-        let var_H = verifier.allocate_point(b"H", cmpr_H).unwrap();
+        let var_G = verifier.allocate_point(b"G", G).unwrap();
+        let var_H = verifier.allocate_point(b"H", H).unwrap();
         let var_A = verifier.allocate_point(b"A", cmpr_A).unwrap();
         let var_B = verifier.allocate_point(b"B", cmpr_B).unwrap();
 
@@ -118,8 +121,8 @@ fn verify_compact_dleq(b: &mut Bencher) {
 
 #[bench]
 fn create_batchable_dleq(b: &mut Bencher) {
-    let G = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(G.compress().as_bytes());
+    let G = G2Projective::generator();
+    let H = <G2Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::encode_to_curve(G.to_bytes(), DOMAIN);
 
     let x = Scalar::from(89327492234u64);
     let A = G * x;
@@ -143,8 +146,8 @@ fn create_batchable_dleq(b: &mut Bencher) {
 
 #[bench]
 fn verify_batchable_dleq(b: &mut Bencher) {
-    let G = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(G.compress().as_bytes());
+    let G = G2Projective::generator();
+    let H = <G2Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::encode_to_curve(G.to_bytes(), DOMAIN);
 
     let (proof, cmpr_A, cmpr_B) = {
         let x = Scalar::from(89327492234u64);
@@ -166,16 +169,16 @@ fn verify_batchable_dleq(b: &mut Bencher) {
         (prover.prove_batchable(), cmpr_A, cmpr_B)
     };
 
-    let cmpr_G = G.compress();
-    let cmpr_H = H.compress();
+    // let cmpr_G = G.compress();
+    // let cmpr_H = H.compress();
 
     b.iter(|| {
         let mut transcript = Transcript::new(b"DLEQTest");
         let mut verifier = Verifier::new(b"DLEQProof", &mut transcript);
 
         let var_x = verifier.allocate_scalar(b"x");
-        let var_G = verifier.allocate_point(b"G", cmpr_G).unwrap();
-        let var_H = verifier.allocate_point(b"H", cmpr_H).unwrap();
+        let var_G = verifier.allocate_point(b"G", G).unwrap();
+        let var_H = verifier.allocate_point(b"H", H).unwrap();
         let var_A = verifier.allocate_point(b"A", cmpr_A).unwrap();
         let var_B = verifier.allocate_point(b"B", cmpr_B).unwrap();
 
@@ -186,8 +189,8 @@ fn verify_batchable_dleq(b: &mut Bencher) {
 }
 
 fn batch_verify_batchable_dleq_helper(batch_size: usize, b: &mut Bencher) {
-    let G = dalek_constants::RISTRETTO_BASEPOINT_POINT;
-    let H = RistrettoPoint::hash_from_bytes::<Sha512>(G.compress().as_bytes());
+    let G = G2Projective::generator();
+    let H = <G2Projective as HashToCurve<ExpandMsgXmd<Sha512>>>::encode_to_curve(G.to_bytes(), DOMAIN);
 
     let mut proofs = Vec::new();
     let mut cmpr_As = Vec::new();
@@ -225,8 +228,8 @@ fn batch_verify_batchable_dleq_helper(batch_size: usize, b: &mut Bencher) {
         let mut verifier = BatchVerifier::new(b"DLEQProof", batch_size, transcript_refs).unwrap();
 
         let var_x = verifier.allocate_scalar(b"x");
-        let var_G = verifier.allocate_static_point(b"G", G.compress()).unwrap();
-        let var_H = verifier.allocate_static_point(b"H", H.compress()).unwrap();
+        let var_G = verifier.allocate_static_point(b"G", G).unwrap();
+        let var_H = verifier.allocate_static_point(b"H", H).unwrap();
         let var_A = verifier
             .allocate_instance_point(b"A", cmpr_As.clone())
             .unwrap();
