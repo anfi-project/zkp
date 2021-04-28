@@ -1,11 +1,13 @@
 use std::ops::Neg;
 
+use ff::Field;
 use group::{Group, GroupEncoding};
-// use group::prime::{PrimeCurve};
-use serde::{Deserialize, Serialize};
+use rand::thread_rng;
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
-use crate::{/*BatchableProof,*/ ProofError, Transcript};
+use crate::{BatchableProof, ProofError, Transcript};
+use crate::util::Matrix;
 
 /// Used to produce batch verification results.
 ///
@@ -56,7 +58,7 @@ pub enum PointVar {
 
 impl<'a, G> BatchVerifier<'a, G>
     where G: Group + GroupEncoding,
-          <G as Group>::Scalar: Neg + Serialize + Deserialize<'static>,
+          <G as Group>::Scalar: Neg + Serialize + DeserializeOwned,
     {
     /// Construct a new batch verifier for the statement with the
     /// given `proof_label`.
@@ -135,116 +137,116 @@ impl<'a, G> BatchVerifier<'a, G>
         Ok(PointVar::Instance(self.instance_points.len() - 1))
     }
 
-    // / Consume the verifier to produce a verification result.
-    // pub fn verify_batchable(mut self, proofs: &[BatchableProof<G>]) -> Result<(), ProofError> {
-    //     if proofs.len() != self.batch_size {
-    //         return Err(ProofError::BatchSizeMismatch);
-    //     }
+    /// Consume the verifier to produce a verification result.
+    pub fn verify_batchable(mut self, proofs: &[BatchableProof<G>]) -> Result<(), ProofError> {
+        if proofs.len() != self.batch_size {
+            return Err(ProofError::BatchSizeMismatch);
+        }
 
-    //     for proof in proofs {
-    //         if proof.commitments.len() != self.constraints.len() {
-    //             return Err(ProofError::VerificationFailure);
-    //         }
-    //         if proof.responses.len() != self.num_scalars {
-    //             return Err(ProofError::VerificationFailure);
-    //         }
-    //     }
+        for proof in proofs {
+            if proof.commitments.len() != self.constraints.len() {
+                return Err(ProofError::VerificationFailure);
+            }
+            if proof.responses.len() != self.num_scalars {
+                return Err(ProofError::VerificationFailure);
+            }
+        }
 
-    //     // Feed each prover's commitments into their respective transcript
-    //     for j in 0..self.batch_size {
-    //         for (i, com) in proofs[j].commitments.iter().enumerate() {
-    //             let label = match self.constraints[i].0 {
-    //                 PointVar::Static(var_idx) => self.static_point_labels[var_idx],
-    //                 PointVar::Instance(var_idx) => self.instance_point_labels[var_idx],
-    //             };
-    //             self.transcripts[j].validate_and_append_blinding_commitment(label, com)?;
-    //         }
-    //     }
+        // Feed each prover's commitments into their respective transcript
+        for j in 0..self.batch_size {
+            for (i, com) in proofs[j].commitments.iter().enumerate() {
+                let label = match self.constraints[i].0 {
+                    PointVar::Static(var_idx) => self.static_point_labels[var_idx],
+                    PointVar::Instance(var_idx) => self.instance_point_labels[var_idx],
+                };
+                self.transcripts[j].validate_and_append_blinding_commitment(label, com)?;
+            }
+        }
 
-    //     // Compute the challenge value for each proof
-    //     let minus_c = self
-    //         .transcripts
-    //         .iter_mut()
-    //         .map(|trans| <G as Group>::Scalar::neg(TranscriptProtocol::<G>::get_challenge(*trans, b"chal")))
-    //         .collect::<Vec<_>>();
+        // Compute the challenge value for each proof
+        let minus_c = self
+            .transcripts
+            .iter_mut()
+            .map(|trans| <G as Group>::Scalar::neg(TranscriptProtocol::<G>::get_challenge(*trans, b"chal")))
+            .collect::<Vec<_>>();
 
-    //     let num_s = self.static_points.len();
-    //     let num_i = self.instance_points.len();
-    //     let num_c = self.constraints.len();
+        let num_s = self.static_points.len();
+        let num_i = self.instance_points.len();
+        let num_c = self.constraints.len();
 
-    //     let mut static_coeffs = vec![<G as group::Group>::Scalar::zero(); num_s];
-    //     let mut instance_coeffs = Matrix::<<G as group::Group>::Scalar>::new(num_i + num_c, self.batch_size);
+        let mut static_coeffs = vec![<G as Group>::Scalar::zero(); num_s];
+        let mut instance_coeffs = Matrix::<<G as Group>::Scalar>::new(num_i + num_c, self.batch_size);
 
-    //     for i in 0..num_c {
-    //         let (ref lhs_var, ref rhs_lc) = self.constraints[i];
-    //         for j in 0..self.batch_size {
-    //             let random_factor = <G as group::Group>::Scalar::random(&mut thread_rng());
+        for i in 0..num_c {
+            let (ref lhs_var, ref rhs_lc) = self.constraints[i];
+            for j in 0..self.batch_size {
+                let random_factor = <G as group::Group>::Scalar::random(&mut thread_rng());
 
-    //             // rand*( sum(P_i, resp_i) - c * Q - Q_com) == 0
+                // rand*( sum(P_i, resp_i) - c * Q - Q_com) == 0
 
-    //             instance_coeffs[(num_i + i, j)] -= random_factor;
+                instance_coeffs[(num_i + i, j)] -= random_factor;
 
-    //             match lhs_var {
-    //                 PointVar::Static(var_idx) => {
-    //                     static_coeffs[*var_idx] += random_factor * minus_c[j];
-    //                 }
-    //                 PointVar::Instance(var_idx) => {
-    //                     instance_coeffs[(*var_idx, j)] += random_factor * minus_c[j];
-    //                 }
-    //             }
+                match lhs_var {
+                    PointVar::Static(var_idx) => {
+                        static_coeffs[*var_idx] += random_factor * minus_c[j];
+                    }
+                    PointVar::Instance(var_idx) => {
+                        instance_coeffs[(*var_idx, j)] += random_factor * minus_c[j];
+                    }
+                }
 
-    //             for (sc_var, pt_var) in rhs_lc {
-    //                 let resp = proofs[j].responses[sc_var.0];
-    //                 match pt_var {
-    //                     PointVar::Static(var_idx) => {
-    //                         static_coeffs[*var_idx] += random_factor * resp;
-    //                     }
-    //                     PointVar::Instance(var_idx) => {
-    //                         instance_coeffs[(*var_idx, j)] += random_factor * resp;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
+                for (sc_var, pt_var) in rhs_lc {
+                    let resp = proofs[j].responses[sc_var.0];
+                    match pt_var {
+                        PointVar::Static(var_idx) => {
+                            static_coeffs[*var_idx] += random_factor * resp;
+                        }
+                        PointVar::Instance(var_idx) => {
+                            instance_coeffs[(*var_idx, j)] += random_factor * resp;
+                        }
+                    }
+                }
+            }
+        }
 
-    //     let mut instance_points = self.instance_points.clone();
-    //     for i in 0..num_c {
-    //         let ith_commitments = proofs.iter().map(|proof| proof.commitments[i]);
-    //         instance_points.push(ith_commitments.collect());
-    //     }
+        let mut instance_points = self.instance_points.clone();
+        for i in 0..num_c {
+            let ith_commitments = proofs.iter().map(|proof| proof.commitments[i]);
+            instance_points.push(ith_commitments.collect());
+        }
 
-    //     let flat_instance_points = instance_points
-    //         .iter()
-    //         .flat_map(|inner| inner.iter().cloned())
-    //         .collect::<Vec<G>>();
+        let flat_instance_points = instance_points
+            .iter()
+            .flat_map(|inner| inner.iter().cloned())
+            .collect::<Vec<G>>();
 
-    //     let mut check = self.static_points[0] * static_coeffs[0];
-    //     for i in 1..static_coeffs.len() {
-    //         check += self.static_points[i] * static_coeffs[i];
-    //     }
-    //     let rme: Vec<&<G as group::Group>::Scalar> = instance_coeffs.row_major_entries().collect();
-    //     for i in 0..rme.len() {
-    //         check += flat_instance_points[i] * rme[i];
-    //     }
-    //     // check -= G1Projective::identity();
+        let mut check = self.static_points[0] * static_coeffs[0];
+        for i in 1..static_coeffs.len() {
+            check += self.static_points[i] * static_coeffs[i];
+        }
+        let rme: Vec<&<G as group::Group>::Scalar> = instance_coeffs.row_major_entries().collect();
+        for i in 0..rme.len() {
+            check += flat_instance_points[i] * rme[i];
+        }
+        // check -= G1Projective::identity();
 
-    //     // let check = RistrettoPoint::optional_multiscalar_mul(
-    //     //     static_coeffs
-    //     //         .iter()
-    //     //         .chain(instance_coeffs.row_major_entries()),
-    //     //     self.static_points
-    //     //         .iter()
-    //     //         .chain(flat_instance_points.iter())
-    //     //         .map(|pt| pt.decompress()),
-    //     // )
-    //     // .ok_or(ProofError::VerificationFailure)?;
+        // let check = RistrettoPoint::optional_multiscalar_mul(
+        //     static_coeffs
+        //         .iter()
+        //         .chain(instance_coeffs.row_major_entries()),
+        //     self.static_points
+        //         .iter()
+        //         .chain(flat_instance_points.iter())
+        //         .map(|pt| pt.decompress()),
+        // )
+        // .ok_or(ProofError::VerificationFailure)?;
 
-    //     if bool::from(<G as group::Group>::is_identity(&check)) {
-    //         Ok(())
-    //     } else {
-    //         Err(ProofError::VerificationFailure)
-    //     }
-    // }
+        if bool::from(<G as group::Group>::is_identity(&check)) {
+            Ok(())
+        } else {
+            Err(ProofError::VerificationFailure)
+        }
+    }
 }
 
 impl<'a, G> SchnorrCS for BatchVerifier<'a, G> {

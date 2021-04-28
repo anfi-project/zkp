@@ -4,10 +4,10 @@ use ff::{Field, PrimeField};
 use group::{Group, GroupEncoding};
 use group::prime::{PrimeCurve};
 use rand::thread_rng;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::toolbox::{SchnorrCS, TranscriptProtocol};
-use crate::{/*BatchableProof,*/ CompactProof, Transcript};
+use crate::{BatchableProof, CompactProof, Transcript};
 
 /// Used to create proofs.
 ///
@@ -39,7 +39,7 @@ pub struct PointVar(usize);
 
 impl<'transcript, G> Prover<'transcript, G> 
     where G: GroupEncoding + Group + PrimeCurve,
-          <G as Group>::Scalar: Serialize + Deserialize<'static> + Mul,
+          <G as Group>::Scalar: Serialize + DeserializeOwned + Mul,
     {
     /// Construct a new prover.  The `proof_label` disambiguates proof
     /// statements.
@@ -128,15 +128,15 @@ impl<'transcript, G> Prover<'transcript, G>
         }
     }
 
-    // /// Consume this prover to produce a batchable proof.
-    // pub fn prove_batchable(self) -> BatchableProof<G> {
-    //     let (_, responses, commitments) = self.prove_impl();
+    /// Consume this prover to produce a batchable proof.
+    pub fn prove_batchable(self) -> BatchableProof<G> {
+        let (_, responses, commitments) = self.prove_impl();
 
-    //     BatchableProof {
-    //         commitments,
-    //         responses,
-    //     }
-    // }
+        BatchableProof {
+            commitments,
+            responses,
+        }
+    }
 }
 
 impl<'transcript, G> SchnorrCS for Prover<'transcript, G> where G: Group {

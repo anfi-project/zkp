@@ -107,13 +107,13 @@ macro_rules! define_proof {
             use std::ops::{Add, AddAssign, Mul};
             use $crate::group::{Group, GroupEncoding};
             use $crate::group::prime::{PrimeCurve, PrimeCurveAffine};
-            use $crate::serde::{Deserialize, Serialize};
+            use $crate::serde::{de::DeserializeOwned, Serialize};
 
             use $crate::toolbox::prover::Prover;
             use $crate::toolbox::verifier::Verifier;
 
             pub use $crate::merlin::Transcript;
-            pub use $crate::{CompactProof, /*BatchableProof,*/ ProofError};
+            pub use $crate::{CompactProof, BatchableProof, ProofError};
 
             /// The generated [`internal`] module contains lower-level
             /// functions at the level of the Schnorr constraint
@@ -209,7 +209,7 @@ macro_rules! define_proof {
                 assignments: ProveAssignments<G>,
             ) -> (Prover<'a, G>, CompressedPoints<G>) where
                 G: PrimeCurve + Group,
-                <G as Group>::Scalar: Serialize + Deserialize<'static>,
+                <G as Group>::Scalar: Serialize + DeserializeOwned,
            {
                 use self::internal::*;
                 use $crate::toolbox::prover::*;
@@ -267,7 +267,7 @@ macro_rules! define_proof {
                 assignments: ProveAssignments<G>,
             ) -> (CompactProof<G>, CompressedPoints<G>) where 
                 G: PrimeCurve + Group,
-                <G as Group>::Scalar: Serialize + Deserialize<'static>,
+                <G as Group>::Scalar: Serialize + DeserializeOwned,
                 <G as Group>::Scalar: Mul,
             {
                 let (prover, compressed) = build_prover(transcript, assignments);
@@ -276,21 +276,24 @@ macro_rules! define_proof {
             }
 
             /// Given a transcript and assignments to secret and public variables, produce a proof in batchable format.
-            // pub fn prove_batchable(
-            //     transcript: &mut Transcript,
-            //     assignments: ProveAssignments,
-            // ) -> (BatchableProof1, CompressedPoints) {
-            //     let (prover, compressed) = build_prover(transcript, assignments);
+            pub fn prove_batchable<G>(
+                transcript: &mut Transcript,
+                assignments: ProveAssignments<G>,
+            ) -> (BatchableProof<G>, CompressedPoints<G>) where
+                G: PrimeCurve + Group,
+                <G as Group>::Scalar: Serialize + DeserializeOwned,
+            {
+                let (prover, compressed) = build_prover(transcript, assignments);
 
-            //     (prover.prove_batchable(), compressed)
-            // }
+                (prover.prove_batchable(), compressed)
+            }
 
-            fn build_verifier<'a, 'b, G>(
-                transcript: &'a mut Transcript,
+            fn build_verifier<'transcript, G>(
+                transcript: &'transcript mut Transcript,
                 assignments: VerifyAssignments<G>,
-            ) -> Result<Verifier<'a, G>, ProofError> where 
+            ) -> Result<Verifier<'transcript, G>, ProofError> where 
                 G: PrimeCurve + Group + Mul<<G as Group>::Scalar, Output=G>,
-                <G as Group>::Scalar: AddAssign + Serialize + Deserialize<'static> + Mul,
+                <G as Group>::Scalar: AddAssign + Serialize + DeserializeOwned + Mul,
             {
                 use self::internal::*;
                 use $crate::toolbox::verifier::*;
@@ -328,7 +331,7 @@ macro_rules! define_proof {
                 assignments: VerifyAssignments<G>,
             ) -> Result<(), ProofError> where
                 G: PrimeCurve + Group + Mul<<G as Group>::Scalar, Output=G>,
-                <G as Group>::Scalar: AddAssign + Serialize + Deserialize<'static> + Mul,
+                <G as Group>::Scalar: AddAssign + Serialize + DeserializeOwned + Mul,
             {
                 let verifier = build_verifier(transcript, assignments)?;
 
@@ -336,52 +339,58 @@ macro_rules! define_proof {
             }
 
             /// Given a transcript and assignments to public variables, verify a proof in batchable format.
-            // pub fn verify_batchable(
-            //     proof: &BatchableProof1,
-            //     transcript: &mut Transcript,
-            //     assignments: VerifyAssignments,
-            // ) -> Result<(), ProofError> {
-            //     let verifier = build_verifier(transcript, assignments)?;
+            pub fn verify_batchable<G>(
+                proof: &BatchableProof<G>,
+                transcript: &mut Transcript,
+                assignments: VerifyAssignments<G>,
+            ) -> Result<(), ProofError> where
+                G: Group + PrimeCurve,
+                <G as Group>::Scalar: Serialize + DeserializeOwned,
+            {
+                let verifier = build_verifier(transcript, assignments)?;
 
-            //     verifier.verify_batchable(proof)
-            // }
+                verifier.verify_batchable(proof)
+            }
 
             /// Verify a batch of proofs, given a batch of transcripts and a batch of assignments.
-            // pub fn batch_verify(
-            //     proofs: &[BatchableProof1],
-            //     transcripts: Vec<&mut Transcript>,
-            //     assignments: BatchVerifyAssignments,
-            // ) -> Result<(), ProofError> {
-            //     use self::internal::*;
-            //     use $crate::toolbox::batch_verifier::*;
+            pub fn batch_verify<G>(
+                proofs: &[BatchableProof<G>],
+                transcripts: Vec<&mut Transcript>,
+                assignments: BatchVerifyAssignments<G>,
+            ) -> Result<(), ProofError> where
+                G: Group + PrimeCurve,
+                <G as Group>::Scalar: Serialize + DeserializeOwned,
+            {
+                use self::internal::*;
+                use $crate::toolbox::batch_verifier::*;
 
-            //     let batch_size = proofs.len();
+                let batch_size = proofs.len();
 
-            //     let mut verifier = BatchVerifier::new(PROOF_LABEL.as_bytes(), batch_size, transcripts)?;
+                let mut verifier = BatchVerifier::new(PROOF_LABEL.as_bytes(), batch_size, transcripts)?;
 
-            //     let secret_vars = SecretVars {
-            //         $($secret_var: verifier.allocate_scalar(TRANSCRIPT_LABELS.$secret_var.as_bytes()),)+
-            //     };
+                let secret_vars = SecretVars {
+                    $($secret_var: verifier.allocate_scalar(TRANSCRIPT_LABELS.$secret_var.as_bytes()),)+
+                };
 
-            //     let public_vars = PublicVars {
-            //         $(
-            //             $instance_var: verifier.allocate_instance_point(
-            //                 TRANSCRIPT_LABELS.$instance_var.as_bytes(),
-            //                 assignments.$instance_var,
-            //             )?,
-            //         )+
-            //         $(
-            //             $common_var: verifier.allocate_static_point(
-            //                 TRANSCRIPT_LABELS.$common_var.as_bytes(),
-            //                 assignments.$common_var,
-            //             )?,
-            //         )+
-            //     };
+                let public_vars = PublicVars {
+                    $(
+                        $instance_var: verifier.allocate_instance_point(
+                            TRANSCRIPT_LABELS.$instance_var.as_bytes(),
+                            assignments.$instance_var,
+                        )?,
+                    )+
+                    $(
+                        $common_var: verifier.allocate_static_point(
+                            TRANSCRIPT_LABELS.$common_var.as_bytes(),
+                            assignments.$common_var,
+                        )?,
+                    )+
+                };
 
-            //     proof_statement(&mut verifier, secret_vars, public_vars);
+                proof_statement(&mut verifier, secret_vars, public_vars);
 
-            //     verifier.verify_batchable(proofs)
-            // }
+                verifier.verify_batchable(proofs)
+            }
 
             #[cfg(all(feature = "bench", test))]
             mod bench {
